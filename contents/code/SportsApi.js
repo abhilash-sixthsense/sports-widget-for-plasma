@@ -166,6 +166,34 @@ function fetchScoresFixtures(options, onSuccess, onError) {
     }, onError);
 }
 
+function fetchLeagueForm(options, onSuccess, onError) {
+    const sport = normalizeSports(options.sports)[0] || "football";
+    const paths = espnPathsForSport(sport, options.league);
+    if (paths.length === 0) {
+        fetchScoresFixtures(options, matches => {
+            onSuccess(formByTeam(matches));
+        }, onError);
+        return;
+    }
+
+    const baseUrl = stripTrailingSlash(defaultBaseUrl("espn"));
+    const path = paths[0];
+    requestJson(`${baseUrl}/${path}/scoreboard?limit=1000&dates=${espnSeasonDateRange(path)}`, payload => {
+        const form = formByTeam(normalizeEspnScoreboard(payload, sport));
+        if (Object.keys(form).length > 0) {
+            onSuccess(form);
+        } else {
+            fetchScoresFixtures(options, matches => {
+                onSuccess(formByTeam(matches));
+            }, onError);
+        }
+    }, () => {
+        fetchScoresFixtures(options, matches => {
+            onSuccess(formByTeam(matches));
+        }, onError);
+    });
+}
+
 function fetchMatchStats(options, onSuccess, onError) {
     const provider = options.provider || "sportsrc";
     const matchId = stringValue(options.matchId).trim();
@@ -1154,7 +1182,7 @@ function computeTableFromMatches(matches) {
 
     return Object.keys(teams).map(key => {
         const item = teams[key];
-        item.form = item.formItems.slice(-6).join(",");
+        item.form = item.formItems.slice(-5).join(",");
         delete item.formItems;
         return item;
     }).filter(item => item.played > 0)
@@ -1163,6 +1191,122 @@ function computeTableFromMatches(matches) {
             item.position = index + 1;
             return item;
         });
+}
+
+function formByTeam(matches) {
+    let result = {};
+    const finished = (matches || []).filter(match => match.status === "Finished" && Number.isFinite(Number(match.homeScore)) && Number.isFinite(Number(match.awayScore)))
+        .sort((left, right) => numberValue(left.timestamp) - numberValue(right.timestamp));
+
+    function append(teamName, value) {
+        const key = normalizedText(teamName);
+        if (key.length === 0)
+            return;
+
+        if (!result[key])
+            result[key] = [];
+
+        result[key].push(value);
+    }
+
+    finished.forEach(match => {
+        const homeGoals = numberValue(match.homeScore);
+        const awayGoals = numberValue(match.awayScore);
+        if (homeGoals > awayGoals) {
+            append(match.homeTeam, "W");
+            append(match.awayTeam, "L");
+        } else if (homeGoals < awayGoals) {
+            append(match.homeTeam, "L");
+            append(match.awayTeam, "W");
+        } else {
+            append(match.homeTeam, "D");
+            append(match.awayTeam, "D");
+        }
+    });
+
+    Object.keys(result).forEach(key => {
+        result[key] = result[key].slice(-5).join(",");
+    });
+    return result;
+}
+
+function formForTeam(formMap, teamName) {
+    const key = normalizedText(teamName);
+    if (formMap[key])
+        return formMap[key];
+
+    const compact = compactTeamName(teamName);
+    const alias = teamAliasKey(teamName);
+    const keys = Object.keys(formMap || {});
+    for (let index = 0; index < keys.length; index += 1) {
+        const itemCompact = compactTeamName(keys[index]);
+        const itemAlias = teamAliasKey(keys[index]);
+        if (alias.length > 0 && alias === itemAlias)
+            return formMap[keys[index]];
+
+        if (compact.length > 0 && itemCompact.indexOf(compact) >= 0)
+            return formMap[keys[index]];
+
+        if (compact.length > 0 && compact.indexOf(itemCompact) >= 0)
+            return formMap[keys[index]];
+    }
+    return "";
+}
+
+function compactTeamName(value) {
+    return normalizedText(value)
+        .replace(/\b(fc|cf|afc|ac|sc|ss|ssc|bc|calcio|club|de|la|the)\b/g, "")
+        .replace(/[^a-z0-9]+/g, "");
+}
+
+function teamAliasKey(value) {
+    const compact = compactTeamName(value);
+    const aliases = {
+        "athletic": "athleticbilbao",
+        "athleticbilbao": "athleticbilbao",
+        "athleticclub": "athleticbilbao",
+        "atleti": "atleticomadrid",
+        "atleticomadrid": "atleticomadrid",
+        "atletico": "atleticomadrid",
+        "atleticodemadrid": "atleticomadrid",
+        "barca": "barcelona",
+        "barcelona": "barcelona",
+        "bayern": "bayernmunich",
+        "bayernmunich": "bayernmunich",
+        "brighton": "brightonhove",
+        "brightonhove": "brightonhove",
+        "brightonandhovealbion": "brightonhove",
+        "internazionale": "intermilan",
+        "inter": "intermilan",
+        "intermilan": "intermilan",
+        "manchester": "manchesterunited",
+        "manchestercity": "manchestercity",
+        "manchesterunited": "manchesterunited",
+        "mancity": "manchestercity",
+        "manunited": "manchesterunited",
+        "manutd": "manchesterunited",
+        "milan": "acmilan",
+        "acmilan": "acmilan",
+        "newcastle": "newcastleunited",
+        "newcastleunited": "newcastleunited",
+        "nottingham": "nottinghamforest",
+        "nottinghamforest": "nottinghamforest",
+        "psg": "parissaintgermain",
+        "parissaintgermain": "parissaintgermain",
+        "real": "realmadrid",
+        "realmadrid": "realmadrid",
+        "sociedad": "realsociedad",
+        "realsociedad": "realsociedad",
+        "spurs": "tottenham",
+        "tottenham": "tottenham",
+        "tottenhamhotspur": "tottenham",
+        "westham": "westhamunited",
+        "westhamunited": "westhamunited",
+        "wolves": "wolverhampton",
+        "wolverhampton": "wolverhampton",
+        "wolverhamptonwanderers": "wolverhampton"
+    };
+    return aliases[compact] || compact;
 }
 
 function uniqueValues(values) {
@@ -1179,7 +1323,15 @@ function uniqueValues(values) {
 }
 
 function normalizedText(value) {
-    return stringValue(value).toLowerCase().replace(/\s+/g, " ").trim();
+    return stripDiacritics(stringValue(value)).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function stripDiacritics(value) {
+    try {
+        return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    } catch (error) {
+        return String(value);
+    }
 }
 
 function defaultBaseUrl(provider) {

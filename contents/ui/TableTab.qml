@@ -341,7 +341,14 @@ Item {
         property string form: ""
 
         function results() {
-            return String(form || "").replace(/[^A-Za-z]+/g, ",").split(",").filter(item => item.length > 0).slice(-6);
+            const text = String(form || "").trim();
+            if (text.length === 0)
+                return [];
+
+            if (/^[WDL]+$/i.test(text))
+                return text.split("").slice(-5);
+
+            return text.replace(/[^A-Za-z]+/g, ",").split(",").filter(item => item.length > 0).slice(-5);
         }
 
         Row {

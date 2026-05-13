@@ -77,6 +77,7 @@ PlasmoidItem {
             if (table.length > 0) {
                 applyTable(table);
                 root.tableErrorMessage = "";
+                enrichTableForm(options);
             } else if (tableModel.count === 0) {
                 applyFallbackTable(i18nc("@info:status", "No table rows returned for %1.", root.selectedLeague));
             } else {
@@ -122,9 +123,37 @@ PlasmoidItem {
 
             applyTable(rows);
             root.tableErrorMessage = i18ncp("@info:status", "Loaded %1 table row from SportSRC.", "Loaded %1 table rows from SportSRC.", rows.length);
+            enrichTableForm(options);
         }, (message) => {
             if (tableModel.count === 0)
                 root.tableErrorMessage = i18nc("@info:status", "SportSRC table request for %1 failed: %2", league, message);
+        });
+    }
+
+    function enrichTableForm(options) {
+        const requestSport = SportVisuals.normalizedSport(options.sports);
+        const requestLeague = String(options.league || "").trim().toUpperCase();
+        SportsApi.fetchLeagueForm(Object.assign({}, options, {
+            "provider": "espn",
+            "baseUrl": "https://site.api.espn.com/apis/site/v2/sports"
+        }), (formByTeam) => {
+            if (requestSport !== SportVisuals.normalizedSport(root.selectedSport) || requestLeague !== String(root.selectedLeague || "").trim().toUpperCase())
+                return;
+
+            if (Object.keys(formByTeam).length === 0)
+                return;
+
+            const rows = root.tableRows.map((row) => {
+                const form = SportsApi.formForTeam(formByTeam, row.team);
+                if (!form || form.length === 0)
+                    return row;
+
+                const copy = Object.assign({}, row);
+                copy.form = form;
+                return copy;
+            });
+            applyTable(rows);
+        }, () => {
         });
     }
 
