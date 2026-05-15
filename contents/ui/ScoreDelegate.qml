@@ -20,6 +20,7 @@ Rectangle {
     property string status: ""
     property string minute: ""
     property string startTime: ""
+    property string stadium: ""
     property string homeBadge: ""
     property string awayBadge: ""
     property string poster: ""
@@ -33,7 +34,17 @@ Rectangle {
         return root.homeScore + " - " + root.awayScore;
     }
 
-    height: Kirigami.Units.gridUnit * 3.2
+    function centerTimeText() {
+        if (root.minute.length > 0)
+            return root.minute;
+
+        if (root.startTime.length > 0)
+            return root.startTime;
+
+        return root.status === "Live" ? root.status : "";
+    }
+
+    height: Kirigami.Units.gridUnit * 3.6
     color: favorite ? Qt.rgba(1, 0.59, 0.31, 0.14) : "transparent"
 
     Rectangle {
@@ -44,44 +55,23 @@ Rectangle {
         color: "#29464f"
     }
 
-    RowLayout {
+    Item {
+        id: rowContent
+
         anchors.fill: parent
         anchors.leftMargin: Kirigami.Units.smallSpacing
         anchors.rightMargin: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing
-
-        TeamLogo {
-            sourceUrl: root.homeBadge
-        }
 
         ColumnLayout {
-            Layout.fillWidth: true
+            id: scoreColumn
+
+            width: Kirigami.Units.gridUnit * 5.5
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
             spacing: 0
 
             PlasmaComponents.Label {
-                Layout.fillWidth: true
-                text: root.homeTeam
-                color: "#e7fbff"
-                elide: Text.ElideRight
-                font.bold: true
-            }
-
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
-                text: root.league.length > 0 ? root.league : root.sport
-                color: "#9db7be"
-                elide: Text.ElideRight
-                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
-            }
-
-        }
-
-        ColumnLayout {
-            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
-            spacing: 0
-
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
+                width: parent.width
                 text: scoreText()
                 color: "#ffffff"
                 horizontalAlignment: Text.AlignHCenter
@@ -90,42 +80,78 @@ Rectangle {
             }
 
             PlasmaComponents.Label {
-                Layout.fillWidth: true
-                text: root.minute.length > 0 ? root.minute : root.status
+                width: parent.width
+                text: centerTimeText()
                 color: root.status === "Live" ? "#6ee7a7" : "#9db7be"
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
                 font.pixelSize: Kirigami.Theme.smallFont.pixelSize
             }
 
+            PlasmaComponents.Label {
+                width: parent.width
+                visible: root.stadium.length > 0
+                text: root.stadium
+                color: "#9db7be"
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                font.pixelSize: Math.max(8, Kirigami.Theme.smallFont.pixelSize - 1)
+            }
+
         }
 
-        ColumnLayout {
-            Layout.fillWidth: true
+        RowLayout {
+            anchors.left: parent.left
+            anchors.right: scoreColumn.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.rightMargin: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.smallSpacing
+
+            TeamLogo {
+                sourceUrl: root.homeBadge
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+
+                PlasmaComponents.Label {
+                    Layout.fillWidth: true
+                    text: root.homeTeam
+                    color: "#e7fbff"
+                    elide: Text.ElideRight
+                    font.bold: true
+                }
+
+            }
+        }
+
+        RowLayout {
+            anchors.left: scoreColumn.right
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Kirigami.Units.smallSpacing
             spacing: 0
 
-            PlasmaComponents.Label {
+            ColumnLayout {
                 Layout.fillWidth: true
-                text: root.awayTeam
-                color: "#e7fbff"
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideRight
-                font.bold: true
+                spacing: 0
+
+                PlasmaComponents.Label {
+                    Layout.fillWidth: true
+                    text: root.awayTeam
+                    color: "#e7fbff"
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                    font.bold: true
+                }
+
             }
 
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
-                text: root.startTime
-                color: "#9db7be"
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideRight
-                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+            TeamLogo {
+                sourceUrl: root.awayBadge
             }
 
-        }
-
-        TeamLogo {
-            sourceUrl: root.awayBadge
         }
 
     }

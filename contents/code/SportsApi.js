@@ -352,6 +352,7 @@ function normalizeSofaScoreFixture(event, league) {
         startTime: timestamp > 0 ? formatStartTime(timestamp) : "",
         timestamp,
         matchday: event && event.roundInfo && event.roundInfo.round ? "Round " + event.roundInfo.round : "",
+        stadium: sofaScoreStadium(event && event.venue),
         homeBadge: sofaScoreTeamImage(homeTeam.id),
         awayBadge: sofaScoreTeamImage(awayTeam.id),
         poster: "",
@@ -370,6 +371,13 @@ function sofaScoreDisplayScore(score) {
         return stringValue(score.current);
 
     return "";
+}
+
+function sofaScoreStadium(venue) {
+    if (!venue)
+        return "";
+
+    return stringValue(venue.stadium && venue.stadium.name) || stringValue(venue.name);
 }
 
 function sofaScoreTeamImage(teamId) {
@@ -403,6 +411,7 @@ function normalizeTheSportsDBFixture(event, league) {
         startTime: Number.isFinite(timestamp) ? formatStartTime(timestamp) : "",
         timestamp: Number.isFinite(timestamp) ? timestamp : 0,
         matchday: event && event.intRound ? "Round " + event.intRound : "",
+        stadium: stringValue(event && event.strVenue),
         homeBadge: stringValue(event && event.strHomeTeamBadge),
         awayBadge: stringValue(event && event.strAwayTeamBadge),
         poster: stringValue(event && (event.strPoster || event.strThumb)),

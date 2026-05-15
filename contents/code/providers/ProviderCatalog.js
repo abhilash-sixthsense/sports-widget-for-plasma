@@ -178,6 +178,7 @@ function normalizeFixtures(provider, payload, sport) {
             startTime: match.startTime,
             timestamp: match.timestamp,
             matchday: match.matchday || "",
+            stadium: match.stadium || "",
             homeBadge: match.homeBadge,
             awayBadge: match.awayBadge,
             poster: match.poster || "",
@@ -199,6 +200,7 @@ function normalizeSportScoreMatch(match, sport) {
         minute: "",
         startTime: Number.isFinite(timestamp) ? formatStartTime(timestamp) : "",
         timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+        stadium: stringValue(match.venue || match.stadium || match.ground),
         homeBadge: stringValue(match.home_logo),
         awayBadge: stringValue(match.away_logo),
         popular: false

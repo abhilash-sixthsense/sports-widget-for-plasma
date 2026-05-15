@@ -48,6 +48,7 @@ Item {
             status: model.status
             minute: model.minute
             startTime: model.startTime
+            stadium: model.stadium || ""
             homeBadge: model.homeBadge
             awayBadge: model.awayBadge
             poster: model.poster
