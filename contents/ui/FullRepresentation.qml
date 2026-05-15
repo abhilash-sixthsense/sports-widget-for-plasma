@@ -19,6 +19,7 @@ Item {
     property var fixturesModel
     property var statsModel
     property bool loading: false
+    property bool schedulesLoading: false
     property string errorMessage: ""
     property string tableErrorMessage: ""
     property string lastUpdatedText: ""
@@ -149,7 +150,7 @@ Item {
             startTime: root.hasMatches ? root.scoreModel.get(0).startTime : ""
             homeBadge: root.hasMatches ? root.scoreModel.get(0).homeBadge : ""
             awayBadge: root.hasMatches ? root.scoreModel.get(0).awayBadge : ""
-            loading: root.loading
+            loading: root.loading || root.schedulesLoading
         }
 
         Rectangle {
@@ -199,7 +200,7 @@ Item {
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
-            visible: root.errorMessage.length > 0
+            visible: root.errorMessage.length > 0 && !root.loading && !root.schedulesLoading
             type: Kirigami.MessageType.Information
             text: root.errorMessage
         }
@@ -212,6 +213,7 @@ Item {
             ScheduleTab {
                 scheduleModel: root.scoreModel
                 favoriteTeam: root.favoriteTeam
+                loading: root.loading || root.schedulesLoading
             }
 
             StatsTab {

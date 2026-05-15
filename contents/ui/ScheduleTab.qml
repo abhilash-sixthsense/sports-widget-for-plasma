@@ -13,6 +13,7 @@ Item {
 
     property var scheduleModel
     property string favoriteTeam: ""
+    property bool loading: false
 
     function isFavoriteTeam(teamName) {
         const favorite = root.favoriteTeam.toLowerCase();
@@ -32,7 +33,7 @@ Item {
 
         EmptyState {
             anchors.fill: parent
-            visible: scheduleList.count === 0
+            visible: scheduleList.count === 0 && !root.loading
             text: i18nc("@info:placeholder", "No scheduled matches")
         }
 
@@ -52,6 +53,28 @@ Item {
             poster: model.poster
             popular: model.popular
             favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
+        }
+    }
+
+    ColumnLayout {
+        anchors.centerIn: parent
+        width: Math.max(0, parent.width - Kirigami.Units.gridUnit * 2)
+        visible: root.loading && scheduleList.count === 0
+        spacing: Kirigami.Units.smallSpacing
+
+        PlasmaComponents.BusyIndicator {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Kirigami.Units.iconSizes.large
+            Layout.preferredHeight: Layout.preferredWidth
+            running: root.loading
+        }
+
+        PlasmaComponents.Label {
+            Layout.fillWidth: true
+            text: i18nc("@info:status", "Loading schedules")
+            color: "#9db7be"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
         }
     }
 

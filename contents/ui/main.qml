@@ -26,6 +26,7 @@ PlasmoidItem {
     property bool pendingRefresh: false
     property bool tableRequestCompleted: false
     property bool currentManualRefresh: false
+    property bool schedulesLoading: false
     property string selectedCountry: String(Plasmoid.configuration.country || "england").trim() || "england"
     property string selectedLeague: String(Plasmoid.configuration.league || "english-premier-league").trim() || "english-premier-league"
     property string favoriteTeam: String(Plasmoid.configuration.favoriteTeam || "").trim()
@@ -38,6 +39,7 @@ PlasmoidItem {
     property int pendingRequests: 0
     property var refreshErrors: []
     property var tableRows: []
+    property string pendingScheduleMessage: ""
 
     function refreshScores(manual) {
         if (root.loading) {
@@ -61,6 +63,9 @@ PlasmoidItem {
         root.tableRequestCompleted = false;
         root.currentManualRefresh = manual;
         root.loading = true;
+        root.schedulesLoading = true;
+        root.pendingScheduleMessage = "";
+        emptySchedulesTimer.stop();
         root.errorMessage = "";
         applyInitialTableState();
         statsModel.clear();
@@ -74,6 +79,7 @@ PlasmoidItem {
                 applyTable(table);
                 root.tableErrorMessage = "";
                 enrichTableForm(options);
+                refreshSchedulesFromTable(options);
             } else if (tableModel.count === 0) {
                 applyFallbackTable(i18nc("@info:status", "No table rows returned for %1.", root.selectedLeague));
             } else {
@@ -91,13 +97,51 @@ PlasmoidItem {
                 finishRefresh(manual, message);
         });
         SportsApi.fetchScoresFixtures(options, (fixtures) => {
-            applySchedules(fixtures, i18nc("@info:status", "Updated %1", Qt.formatTime(new Date(), "hh:mm")));
+            const scheduledCount = applySchedules(fixtures, i18nc("@info:status", "Updated %1", Qt.formatTime(new Date(), "hh:mm")));
+            if (scheduledCount > 0) {
+                emptySchedulesTimer.stop();
+                root.schedulesLoading = false;
+            } else if (root.tableRequestCompleted && root.tableRows.length === 0) {
+                deferEmptySchedulesMessage("");
+            }
+
             applyFixtures(fixtures);
             refreshFixtureStats(options);
             finishRefresh(manual, "");
         }, (message) => {
             applySchedules([], i18nc("@info:status", "Updated %1", Qt.formatTime(new Date(), "hh:mm")));
+            if (root.tableRequestCompleted && root.tableRows.length === 0)
+                deferEmptySchedulesMessage(message);
+
             finishRefresh(manual, message);
+        });
+    }
+
+    function refreshSchedulesFromTable(options) {
+        if (root.tableRows.length === 0) {
+            deferEmptySchedulesMessage("");
+
+            return;
+        }
+
+        root.schedulesLoading = true;
+        emptySchedulesTimer.stop();
+
+        SportsApi.fetchScoresFixtures(Object.assign({}, options, {
+            "tableRows": root.tableRows
+        }), (fixtures) => {
+            const scheduledCount = applySchedules(fixtures, i18nc("@info:status", "Updated %1", Qt.formatTime(new Date(), "hh:mm")));
+            if (scheduledCount > 0) {
+                emptySchedulesTimer.stop();
+                root.schedulesLoading = false;
+            } else {
+                deferEmptySchedulesMessage("");
+            }
+
+            applyFixtures(fixtures);
+            refreshFixtureStats(options);
+        }, (message) => {
+            deferEmptySchedulesMessage(message);
         });
     }
 
@@ -171,12 +215,21 @@ PlasmoidItem {
 
         root.loading = false;
         if (root.refreshErrors.length > 0 && scoresModel.count === 0 && tableModel.count === 0 && fixturesModel.count === 0) {
+            emptySchedulesTimer.stop();
+            root.schedulesLoading = false;
             applySchedules(SportsApi.demoFixtures(), i18nc("@info:status", "Offline sample data"));
             applyTable(SportsApi.demoTable());
             applyFixtures(SportsApi.demoFixtures());
             root.errorMessage = manual ? root.refreshErrors.join(", ") : "";
         } else {
-            root.errorMessage = manual && root.refreshErrors.length > 0 ? root.refreshErrors.join(", ") : "";
+            if (root.schedulesLoading && root.tableRequestCompleted && root.tableRows.length === 0)
+                deferEmptySchedulesMessage("");
+
+            if (!root.schedulesLoading && scoresModel.count === 0 && root.errorMessage.length === 0)
+                deferEmptySchedulesMessage("");
+
+            if (manual && root.refreshErrors.length > 0)
+                root.errorMessage = root.refreshErrors.join(", ");
         }
 
         if (root.pendingRefresh) {
@@ -198,8 +251,24 @@ PlasmoidItem {
         matches.forEach((match) => {
             return scoresModel.append(match);
         });
-        root.errorMessage = matches.length === 0 ? i18nc("@info:status", "No scheduled matches for the selected league.") : "";
+        if (matches.length > 0) {
+            root.errorMessage = "";
+        } else if (!root.schedulesLoading) {
+            root.errorMessage = i18nc("@info:status", "No scheduled matches for the selected league.");
+        }
+
         root.lastUpdatedText = updateText;
+        return matches.length;
+    }
+
+    function deferEmptySchedulesMessage(message) {
+        if (scoresModel.count > 0)
+            return;
+
+        root.pendingScheduleMessage = message && message.length > 0 ? message : i18nc("@info:status", "No scheduled matches for the selected league.");
+        root.schedulesLoading = true;
+        root.errorMessage = "";
+        emptySchedulesTimer.restart();
     }
 
     function scheduledMatches(matches) {
@@ -430,6 +499,20 @@ PlasmoidItem {
         onTriggered: root.refreshScores(true)
     }
 
+    Timer {
+        id: emptySchedulesTimer
+
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            root.schedulesLoading = false;
+            if (scoresModel.count === 0)
+                root.errorMessage = root.pendingScheduleMessage.length > 0 ? root.pendingScheduleMessage : i18nc("@info:status", "No scheduled matches for the selected league.");
+
+            root.pendingScheduleMessage = "";
+        }
+    }
+
     Connections {
         target: Plasmoid.configuration
         ignoreUnknownSignals: true
@@ -474,7 +557,7 @@ PlasmoidItem {
 
     compactRepresentation: CompactRepresentation {
         liveCount: root.liveCount
-        loading: root.loading
+        loading: root.loading || root.schedulesLoading
         layoutMode: Plasmoid.configuration.panelLayoutMode
         primaryText: root.primaryMatchText
         secondaryText: root.secondaryMatchText
@@ -484,6 +567,7 @@ PlasmoidItem {
     fullRepresentation: FullRepresentation {
         scoreModel: scoresModel
         loading: root.loading
+        schedulesLoading: root.schedulesLoading
         errorMessage: root.errorMessage
         tableErrorMessage: root.tableErrorMessage
         lastUpdatedText: root.lastUpdatedText

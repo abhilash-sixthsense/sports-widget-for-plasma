@@ -7,6 +7,16 @@
 .import "providers/ProviderCatalog.js" as ProviderCatalog
 
 const REQUEST_TIMEOUT_MS = 12000;
+const SOFASCORE_API_BASE_URL = "https://api.sofascore.com/api/v1";
+const THESPORTSDB_API_BASE_URL = "https://www.thesportsdb.com/api/v1/json/3";
+
+const SOFASCORE_TOURNAMENTS = {
+    "bulgarian-first-league": { id: 247, label: "Bulgarian First League" }
+};
+
+const THESPORTSDB_LEAGUES = {
+    "bulgarian-first-league": { id: "4626", label: "Bulgarian First League" }
+};
 
 function fetchLiveScores(options, onSuccess, onError) {
     const sports = normalizeSports(options.sports);
@@ -33,6 +43,60 @@ function fetchLeagueTable(options, onSuccess, onError) {
 
 function fetchScoresFixtures(options, onSuccess, onError) {
     const provider = "sportscore";
+
+    function finish(fixtures) {
+        if (fixtures.length > 0) {
+            onSuccess(fixtures);
+            return;
+        }
+
+        fetchFallbackFixtures(options, onSuccess, onError);
+    }
+
+    function fail(message) {
+        fetchFallbackFixtures(options, onSuccess, fallbackMessage => {
+            onError(fallbackMessage || message);
+        });
+    }
+
+    if (canFetchSportScoreTeamFixtures(options)) {
+        fetchSportScoreTeamFixtures(options, fixtures => {
+            if (fixtures.length > 0) {
+                onSuccess(fixtures);
+                return;
+            }
+
+            fetchSportScoreCompetitionFixturesOrProvider(options, provider, finish, fail);
+        }, () => {
+            fetchSportScoreCompetitionFixturesOrProvider(options, provider, finish, fail);
+        });
+        return;
+    }
+
+    fetchSportScoreCompetitionFixturesOrProvider(options, provider, finish, fail);
+}
+
+function fetchSportScoreCompetitionFixturesOrProvider(options, provider, onSuccess, onError) {
+    if (canFetchSportScoreCompetitionFixtures(options)) {
+        fetchSportScoreCompetitionFixtures(options, fixtures => {
+            if (fixtures.length > 0) {
+                onSuccess(fixtures);
+                return;
+            }
+
+            fetchProviderMatches(provider, "fixtures", Object.assign({}, options, {
+                provider,
+                baseUrl: ProviderCatalog.defaultBaseUrl(provider)
+            }), onSuccess, onError);
+        }, () => {
+            fetchProviderMatches(provider, "fixtures", Object.assign({}, options, {
+                provider,
+                baseUrl: ProviderCatalog.defaultBaseUrl(provider)
+            }), onSuccess, onError);
+        });
+        return;
+    }
+
     fetchProviderMatches(provider, "fixtures", Object.assign({}, options, {
         provider,
         baseUrl: ProviderCatalog.defaultBaseUrl(provider)
@@ -113,6 +177,247 @@ function fetchSportScoreTeamForms(options, onSuccess, onError) {
             }
         });
     });
+}
+
+function canFetchSportScoreTeamFixtures(options) {
+    const sport = normalizeSports(options.sports)[0] || "football";
+    const league = ProviderCatalog.sportScoreSlug(options.league);
+    const rows = Array.isArray(options.tableRows) ? options.tableRows : [];
+    return (sport === "football" || sport === "soccer") && league.length > 0 && rows.some(row => sportScoreTeamSlug(row).length > 0);
+}
+
+function fetchSportScoreTeamFixtures(options, onSuccess, onError) {
+    const rows = (Array.isArray(options.tableRows) ? options.tableRows : []).map(row => {
+        const copy = Object.assign({}, row);
+        copy.teamSlug = sportScoreTeamSlug(row);
+        return copy;
+    }).filter(row => stringValue(row.teamSlug).length > 0 && stringValue(row.team).length > 0).slice(0, 24);
+
+    if (rows.length === 0) {
+        onSuccess([]);
+        return;
+    }
+
+    let pending = rows.length;
+    let matches = [];
+    let errors = [];
+    const baseUrl = stripTrailingSlash(ProviderCatalog.defaultBaseUrl("sportscore"));
+
+    rows.forEach(row => {
+        const url = `${baseUrl}/team/?sport=football&slug=${encodeURIComponent(row.teamSlug)}&limit=20&src=sports-widget-for-plasma`;
+        requestJson(url, payload => {
+            matches = matches.concat(ProviderCatalog.normalizeFixtures("sportscore", payload, "football"));
+            pending -= 1;
+            if (pending === 0)
+                finishTeamFixtures(matches, errors, options, onSuccess, onError);
+        }, message => {
+            if (!isHttpNotFound(message))
+                errors.push(`${row.team}: ${message}`);
+
+            pending -= 1;
+            if (pending === 0)
+                finishTeamFixtures(matches, errors, options, onSuccess, onError);
+        });
+    });
+}
+
+function finishTeamFixtures(matches, errors, options, onSuccess, onError) {
+    const rows = dedupeMatches(filterMatchesForSelection(matches, options));
+    if (rows.length > 0 || errors.length === 0) {
+        onSuccess(sortMatches(rows));
+    } else {
+        onError(errors.join(", "));
+    }
+}
+
+function canFetchSportScoreCompetitionFixtures(options) {
+    const sport = normalizeSports(options.sports)[0] || "football";
+    const country = String(options.country || "").trim();
+    const league = ProviderCatalog.sportScoreSlug(options.league);
+    return (sport === "football" || sport === "soccer") && country.length > 0 && league.length > 0;
+}
+
+function fetchSportScoreCompetitionFixtures(options, onSuccess, onError) {
+    const country = String(options.country || "england").trim().toLowerCase();
+    const league = ProviderCatalog.sportScoreSlug(options.league);
+    const leagueLabel = ProviderCatalog.leagueLabel(options.league);
+    const sourceUrl = country === "world" ? "https://sportscore.com/football/competitions/" : `https://sportscore.com/football/country/${encodeURIComponent(country)}/`;
+
+    requestText(sourceUrl, html => {
+        const path = sportScoreCompetitionPath(html, country, league);
+        if (path.length === 0) {
+            onSuccess([]);
+            return;
+        }
+
+        requestText(`https://sportscore.com${path}`, page => {
+            onSuccess(normalizeSportScoreFixturePage(page, leagueLabel));
+        }, onError);
+    }, onError);
+}
+
+function fetchFallbackFixtures(options, onSuccess, onError) {
+    let errors = [];
+
+    function remember(message) {
+        if (String(message || "").length > 0)
+            errors.push(message);
+    }
+
+    function fetchFromTheSportsDB() {
+        if (!canFetchTheSportsDBFixtures(options)) {
+            onError(errors.join(", ") || "No fallback fixture provider is available for this league.");
+            return;
+        }
+
+        fetchTheSportsDBFixtures(options, fixtures => {
+            if (fixtures.length > 0) {
+                onSuccess(fixtures);
+                return;
+            }
+
+            onError(errors.join(", ") || "Fallback providers returned no fixtures.");
+        }, message => {
+            remember(message);
+            onError(errors.join(", "));
+        });
+    }
+
+    if (canFetchSofaScoreFixtures(options)) {
+        fetchSofaScoreFixtures(options, fixtures => {
+            if (fixtures.length > 0) {
+                onSuccess(fixtures);
+                return;
+            }
+
+            fetchFromTheSportsDB();
+        }, message => {
+            remember(message);
+            fetchFromTheSportsDB();
+        });
+        return;
+    }
+
+    fetchFromTheSportsDB();
+}
+
+function canFetchSofaScoreFixtures(options) {
+    return fallbackLeague(SOFASCORE_TOURNAMENTS, options).id > 0 && isFootballSelection(options);
+}
+
+function fetchSofaScoreFixtures(options, onSuccess, onError) {
+    const league = fallbackLeague(SOFASCORE_TOURNAMENTS, options);
+    requestJson(`${SOFASCORE_API_BASE_URL}/unique-tournament/${league.id}/seasons`, payload => {
+        const season = arrayValue(payload && payload.seasons)[0];
+        const seasonId = numberValue(season && season.id);
+        if (seasonId <= 0) {
+            onSuccess([]);
+            return;
+        }
+
+        fetchSofaScoreFixturePage(league, seasonId, 0, [], onSuccess, onError);
+    }, onError);
+}
+
+function fetchSofaScoreFixturePage(league, seasonId, page, matches, onSuccess, onError) {
+    const url = `${SOFASCORE_API_BASE_URL}/unique-tournament/${league.id}/season/${seasonId}/events/next/${page}`;
+    requestJson(url, payload => {
+        const rows = matches.concat(arrayValue(payload && payload.events).map(event => normalizeSofaScoreFixture(event, league)).filter(hasTeams));
+        if (payload && payload.hasNextPage && page < 2) {
+            fetchSofaScoreFixturePage(league, seasonId, page + 1, rows, onSuccess, onError);
+            return;
+        }
+
+        onSuccess(sortMatches(dedupeMatches(rows)));
+    }, onError);
+}
+
+function normalizeSofaScoreFixture(event, league) {
+    const timestamp = numberValue(event && event.startTimestamp) * 1000;
+    const homeTeam = event && event.homeTeam ? event.homeTeam : {};
+    const awayTeam = event && event.awayTeam ? event.awayTeam : {};
+    const status = event && event.status ? event.status : {};
+    const homeScore = event && event.homeScore ? event.homeScore : {};
+    const awayScore = event && event.awayScore ? event.awayScore : {};
+    return {
+        id: "sofascore-" + stringValue(event && event.id),
+        sport: "football",
+        league: league.label,
+        homeTeam: stringValue(homeTeam.shortName || homeTeam.name),
+        awayTeam: stringValue(awayTeam.shortName || awayTeam.name),
+        homeScore: sofaScoreDisplayScore(homeScore),
+        awayScore: sofaScoreDisplayScore(awayScore),
+        status: statusLabel(status.description || status.type),
+        minute: "",
+        startTime: timestamp > 0 ? formatStartTime(timestamp) : "",
+        timestamp,
+        matchday: event && event.roundInfo && event.roundInfo.round ? "Round " + event.roundInfo.round : "",
+        homeBadge: sofaScoreTeamImage(homeTeam.id),
+        awayBadge: sofaScoreTeamImage(awayTeam.id),
+        poster: "",
+        popular: false
+    };
+}
+
+function sofaScoreDisplayScore(score) {
+    if (score === undefined || score === null)
+        return "";
+
+    if (score.display !== undefined && score.display !== null)
+        return stringValue(score.display);
+
+    if (score.current !== undefined && score.current !== null)
+        return stringValue(score.current);
+
+    return "";
+}
+
+function sofaScoreTeamImage(teamId) {
+    const id = numberValue(teamId);
+    return id > 0 ? `${SOFASCORE_API_BASE_URL}/team/${id}/image` : "";
+}
+
+function canFetchTheSportsDBFixtures(options) {
+    return stringValue(fallbackLeague(THESPORTSDB_LEAGUES, options).id).length > 0 && isFootballSelection(options);
+}
+
+function fetchTheSportsDBFixtures(options, onSuccess, onError) {
+    const league = fallbackLeague(THESPORTSDB_LEAGUES, options);
+    requestJson(`${THESPORTSDB_API_BASE_URL}/eventsnextleague.php?id=${encodeURIComponent(league.id)}`, payload => {
+        onSuccess(sortMatches(dedupeMatches(arrayValue(payload && payload.events).map(event => normalizeTheSportsDBFixture(event, league)).filter(hasTeams))));
+    }, onError);
+}
+
+function normalizeTheSportsDBFixture(event, league) {
+    const timestamp = Date.parse(event && event.strTimestamp ? event.strTimestamp + "Z" : "");
+    return {
+        id: "thesportsdb-" + stringValue(event && event.idEvent),
+        sport: "football",
+        league: stringValue(event && event.strLeague) || league.label,
+        homeTeam: stringValue(event && event.strHomeTeam),
+        awayTeam: stringValue(event && event.strAwayTeam),
+        homeScore: stringValue(event && event.intHomeScore),
+        awayScore: stringValue(event && event.intAwayScore),
+        status: statusLabel(event && event.strStatus),
+        minute: "",
+        startTime: Number.isFinite(timestamp) ? formatStartTime(timestamp) : "",
+        timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+        matchday: event && event.intRound ? "Round " + event.intRound : "",
+        homeBadge: stringValue(event && event.strHomeTeamBadge),
+        awayBadge: stringValue(event && event.strAwayTeamBadge),
+        poster: stringValue(event && (event.strPoster || event.strThumb)),
+        popular: false
+    };
+}
+
+function fallbackLeague(map, options) {
+    const slug = ProviderCatalog.sportScoreSlug(options.league);
+    return map[slug] || {};
+}
+
+function isFootballSelection(options) {
+    const sport = normalizeSports(options.sports)[0] || "football";
+    return sport === "football" || sport === "soccer";
 }
 
 function fetchMatchStats(options, onSuccess, onError) {
@@ -228,6 +533,20 @@ function requestJson(url, onSuccess, onError) {
 }
 
 function requestJsonWithHeaders(url, headers, onSuccess, onError) {
+    requestTextWithHeaders(url, headers, responseText => {
+        try {
+            onSuccess(JSON.parse(responseText));
+        } catch (error) {
+            onError(String(error));
+        }
+    }, onError);
+}
+
+function requestText(url, onSuccess, onError) {
+    requestTextWithHeaders(url, { "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" }, onSuccess, onError);
+}
+
+function requestTextWithHeaders(url, headers, onSuccess, onError) {
     const request = new XMLHttpRequest();
     let completed = false;
 
@@ -242,11 +561,7 @@ function requestJsonWithHeaders(url, headers, onSuccess, onError) {
         }
 
         if (request.status >= 200 && request.status < 300) {
-            try {
-                onSuccess(JSON.parse(request.responseText));
-            } catch (error) {
-                onError(String(error));
-            }
+            onSuccess(request.responseText);
         } else {
             onError(`HTTP ${request.status}`);
         }
@@ -254,7 +569,9 @@ function requestJsonWithHeaders(url, headers, onSuccess, onError) {
 
     request.open("GET", url);
     request.timeout = REQUEST_TIMEOUT_MS;
-    request.setRequestHeader("Accept", "application/json");
+    if (!hasHeader(headers, "Accept"))
+        request.setRequestHeader("Accept", "application/json");
+
     Object.keys(headers || {}).forEach(header => {
         if (headers[header] !== undefined && headers[header] !== null && String(headers[header]).length > 0) {
             request.setRequestHeader(header, headers[header]);
@@ -274,6 +591,114 @@ function requestJsonWithHeaders(url, headers, onSuccess, onError) {
         finish("network error");
     };
     request.send();
+}
+
+function hasHeader(headers, headerName) {
+    const normalized = String(headerName || "").toLowerCase();
+    return Object.keys(headers || {}).some(header => header.toLowerCase() === normalized);
+}
+
+function sportScoreCompetitionPath(html, country, league) {
+    const escapedCountry = escapeRegExp(country);
+    const escapedLeague = escapeRegExp(league);
+    const exact = new RegExp(`href="(/football/competition/${escapedCountry}/${escapedLeague}/[^"]+/)"`);
+    let match = exact.exec(html);
+    if (match)
+        return match[1];
+
+    const fallback = new RegExp(`href="(/football/competition/[^/]+/${escapedLeague}/[^"]+/)"`);
+    match = fallback.exec(html);
+    return match ? match[1] : "";
+}
+
+function normalizeSportScoreFixturePage(html, leagueLabel) {
+    const lists = sportScoreJsonLdLists(html);
+    let selected = null;
+    for (let index = 0; index < lists.length; index += 1) {
+        const name = normalizedText(lists[index].name);
+        if (name.indexOf("upcoming fixtures") >= 0) {
+            selected = lists[index];
+            break;
+        }
+    }
+
+    if (!selected)
+        return [];
+
+    const listItems = arrayValue(selected.itemListElement);
+    return listItems.map(item => normalizeSchemaFixture(item && item.item, leagueLabel))
+        .filter(hasTeams)
+        .sort((left, right) => numberValue(left.timestamp) - numberValue(right.timestamp));
+}
+
+function sportScoreJsonLdLists(html) {
+    let result = [];
+    const pattern = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
+    let match = pattern.exec(html);
+    while (match) {
+        try {
+            collectJsonLdLists(JSON.parse(match[1]), result);
+        } catch (error) {
+        }
+        match = pattern.exec(html);
+    }
+    return result;
+}
+
+function collectJsonLdLists(value, result) {
+    if (!value)
+        return;
+
+    if (Array.isArray(value)) {
+        value.forEach(item => collectJsonLdLists(item, result));
+        return;
+    }
+
+    if (typeof value !== "object")
+        return;
+
+    if (value["@type"] === "ItemList")
+        result.push(value);
+
+    collectJsonLdLists(value["@graph"], result);
+}
+
+function normalizeSchemaFixture(event, leagueLabel) {
+    if (!event)
+        return {};
+
+    const timestamp = Date.parse(event.startDate || "");
+    const images = arrayValue(event.image);
+    return {
+        id: stringValue(event["@id"] || event.url),
+        sport: "football",
+        league: leagueLabel,
+        homeTeam: schemaTeamName(event.homeTeam),
+        awayTeam: schemaTeamName(event.awayTeam),
+        homeScore: "",
+        awayScore: "",
+        status: "Upcoming",
+        minute: "",
+        startTime: Number.isFinite(timestamp) ? formatStartTime(timestamp) : stringValue(event.startDate),
+        timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+        matchday: "",
+        homeBadge: stringValue(images[0]),
+        awayBadge: stringValue(images[1]),
+        poster: "",
+        popular: false
+    };
+}
+
+function schemaTeamName(team) {
+    if (!team)
+        return "";
+    if (typeof team === "string")
+        return team;
+    return stringValue(team.name);
+}
+
+function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeSports(value) {
@@ -426,6 +851,25 @@ function sportScoreTeamSlug(row) {
         .replace(/&/g, "and")
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
+}
+
+function dedupeMatches(matches) {
+    let seen = {};
+    let result = [];
+    (Array.isArray(matches) ? matches : []).forEach(match => {
+        const key = [
+            normalizedText(match.league),
+            normalizedText(match.homeTeam),
+            normalizedText(match.awayTeam),
+            String(match.timestamp || match.startTime || "")
+        ].join("|");
+        if (seen[key])
+            return;
+
+        seen[key] = true;
+        result.push(match);
+    });
+    return result;
 }
 
 function sortMatches(matches) {
@@ -661,6 +1105,14 @@ function stringValue(value) {
     }
 
     return String(value);
+}
+
+function arrayValue(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+function hasTeams(match) {
+    return stringValue(match && match.homeTeam).length > 0 && stringValue(match && match.awayTeam).length > 0;
 }
 
 function numberValue(value) {
