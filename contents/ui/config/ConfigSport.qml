@@ -3,6 +3,7 @@
     SPDX-License-Identifier: GPL-3.0-only
 */
 
+import "../../code/SportVisuals.js" as SportVisuals
 import "../../code/providers/ProviderCatalog.js" as ProviderCatalog
 import QtQuick
 import QtQuick.Controls
@@ -14,191 +15,396 @@ import org.kde.plasma.plasmoid
 KCM.SimpleKCM {
     id: root
 
-    property alias cfg_prioritizePopular: prioritizePopular.checked
+    implicitHeight: Kirigami.Units.gridUnit * 22
+
+    property bool cfg_prioritizePopular: Plasmoid.configuration.prioritizePopular
     property string cfg_selectedSports: Plasmoid.configuration.selectedSports
     property string cfg_country: Plasmoid.configuration.country
     property string cfg_league: Plasmoid.configuration.league
     property string cfg_favoriteTeam: Plasmoid.configuration.favoriteTeam
+    property string cfg_savedLeagues: Plasmoid.configuration.savedLeagues
+    property bool cfg_defaultSelectionMigrated: Plasmoid.configuration.defaultSelectionMigrated
+    property int cfg_selectionRevision: Plasmoid.configuration.selectionRevision
+    property int cfg_activeSavedLeagueIndex: Plasmoid.configuration.activeSavedLeagueIndex
+
     readonly property string currentProvider: "sportscore"
+    property int pageIndex: 0
+    property var wizardInitialEntry: ({})
+    property int wizardEditingIndex: -1
 
     function firstSport() {
-        return String(root.cfg_selectedSports || "football").split(",")[0];
+        return String(root.cfg_selectedSports || "").split(",")[0];
     }
 
-    function indexFor(model, value) {
-        for (let index = 0; index < model.length; index += 1) {
-            if (model[index].value === value)
-                return index;
+    function normalizedSport() {
+        const sport = root.firstSport();
+        return sport.length > 0 ? SportVisuals.normalizedSport(sport) : "";
+    }
 
+    function optionLabel(options, value) {
+        for (let index = 0; index < options.length; index += 1) {
+            if (options[index].value === value)
+                return options[index].label || "";
         }
-        return -1;
+        return "";
     }
 
-    function refreshLeagueModel() {
-        const sport = selectedSports.currentValue || root.firstSport();
-        const selectedCountry = country.currentValue || root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, sport);
-        const selectedLeague = ProviderCatalog.sportScoreSlug(root.cfg_league || "english-premier-league");
-        league.model = ProviderCatalog.leagueOptions(root.currentProvider, sport, selectedCountry);
-        league.currentIndex = root.indexFor(league.model, selectedLeague);
-        if (league.model.length > 0 && league.currentIndex < 0)
-            league.currentIndex = 0;
-
-        root.cfg_league = league.currentValue || "";
-        refreshFavoriteModel();
+    function sportOptions() {
+        return ProviderCatalog.sportOptions(root.currentProvider);
     }
 
-    function refreshCountryModel() {
-        const sport = selectedSports.currentValue || root.firstSport();
-        country.model = ProviderCatalog.countryOptions(root.currentProvider, sport);
-        country.currentIndex = root.indexFor(country.model, root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, sport));
-        if (country.model.length > 0 && country.currentIndex < 0)
-            country.currentIndex = 0;
+    function countryOptions() {
+        if (root.normalizedSport().length === 0)
+            return [];
 
-        root.cfg_country = country.currentValue || ProviderCatalog.defaultCountry(root.currentProvider, sport);
-        refreshLeagueModel();
+        return ProviderCatalog.countryOptions(root.currentProvider, root.normalizedSport());
     }
 
-    function refreshFavoriteModel() {
-        favoriteTeam.model = ProviderCatalog.favoriteTeamOptions(root.cfg_league || league.currentValue);
-        favoriteTeam.currentIndex = root.indexFor(favoriteTeam.model, root.cfg_favoriteTeam);
-        if (favoriteTeam.currentIndex < 0)
-            favoriteTeam.currentIndex = 0;
+    function leagueOptions() {
+        if (root.normalizedSport().length === 0)
+            return [];
 
+        return ProviderCatalog.leagueOptions(root.currentProvider, root.normalizedSport(), root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, root.normalizedSport()));
     }
 
-    function countryEntry(index) {
-        if (index < 0 || index >= country.model.length)
-            return { label: "", value: "", icon: "" };
+    function favoriteOptions() {
+        if (!root.cfg_league || root.cfg_league.length === 0)
+            return [{ label: i18nc("@label", "No favorite team"), value: "" }];
 
-        return country.model[index];
+        return ProviderCatalog.favoriteTeamOptions(root.cfg_league || "");
     }
 
-    Kirigami.FormLayout {
+    function sportLabel() {
+        if (root.normalizedSport().length === 0)
+            return i18nc("@label", "No sport selected");
+
+        return root.optionLabel(root.sportOptions(), root.normalizedSport()) || SportVisuals.label(root.normalizedSport());
+    }
+
+    function countryLabel() {
+        if (!root.cfg_country || root.cfg_country.length === 0)
+            return i18nc("@label", "No country selected");
+
+        return root.optionLabel(root.countryOptions(), root.cfg_country) || i18nc("@label", "All countries");
+    }
+
+    function countryIcon(countryValue) {
+        const countries = root.countryOptions();
+        for (let index = 0; index < countries.length; index += 1) {
+            if (countries[index].value === countryValue)
+                return countries[index].icon || "";
+        }
+        return "";
+    }
+
+    function countryIconForEntry(entry) {
+        const countries = ProviderCatalog.countryOptions(root.currentProvider, entry.sport || "football");
+        for (let index = 0; index < countries.length; index += 1) {
+            if (countries[index].value === entry.country)
+                return countries[index].icon || "";
+        }
+        return "";
+    }
+
+    function leagueLabel() {
+        if (!root.cfg_league || root.cfg_league.length === 0)
+            return i18nc("@label", "No league selected");
+
+        return ProviderCatalog.leagueLabel(root.cfg_league) || root.optionLabel(root.leagueOptions(), root.cfg_league) || root.cfg_league;
+    }
+
+    function favoriteLabel() {
+        return root.cfg_favoriteTeam && root.cfg_favoriteTeam.length > 0 ? root.cfg_favoriteTeam : i18nc("@label", "No favorite team");
+    }
+
+    function displayLeagueLabel(entry) {
+        entry = entry || {};
+        return String(entry.customLeagueLabel || entry.leagueLabel || ProviderCatalog.leagueLabel(entry.league) || entry.league || "").trim();
+    }
+
+    function displayCountryLabel(entry) {
+        entry = entry || {};
+        return String(entry.customCountryLabel || entry.countryLabel || entry.country || "").trim();
+    }
+
+    function displayFavoriteTeam(entry) {
+        entry = entry || {};
+        return String(entry.customFavoriteTeamLabel || entry.favoriteTeam || "").trim();
+    }
+
+    function filtered(options, filterText) {
+        const needle = String(filterText || "").trim().toLowerCase();
+        if (needle.length === 0)
+            return options;
+
+        return options.filter(option => String(option.label || "").toLowerCase().indexOf(needle) >= 0);
+    }
+
+    function selectSport(value) {
+        root.cfg_selectedSports = value;
+        const defaultCountry = ProviderCatalog.defaultCountry(root.currentProvider, value);
+        const countries = ProviderCatalog.countryOptions(root.currentProvider, value);
+        root.cfg_country = countries.length > 0 ? defaultCountry : "";
+        const leagues = ProviderCatalog.leagueOptions(root.currentProvider, value, root.cfg_country);
+        root.cfg_league = leagues.length > 0 ? leagues[0].value : "";
+        root.cfg_favoriteTeam = "";
+    }
+
+    function selectCountry(value) {
+        root.cfg_country = value;
+        const leagues = root.leagueOptions();
+        root.cfg_league = leagues.length > 0 ? leagues[0].value : "";
+        root.cfg_favoriteTeam = "";
+    }
+
+    function selectLeague(value) {
+        root.cfg_league = value;
+        root.cfg_favoriteTeam = "";
+    }
+
+    function savedLeagues() {
+        try {
+            const parsed = JSON.parse(root.cfg_savedLeagues || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function saveLeagues(items) {
+        root.cfg_savedLeagues = JSON.stringify(items);
+    }
+
+    function currentEntry() {
+        return {
+            sport: root.normalizedSport(),
+            country: root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, root.normalizedSport()),
+            countryLabel: root.countryLabel(),
+            countryIcon: root.countryIcon(root.cfg_country),
+            league: root.cfg_league || "",
+            leagueLabel: root.leagueLabel(),
+            favoriteTeam: root.cfg_favoriteTeam || "",
+            starred: false
+        };
+    }
+
+    function sameEntry(left, right) {
+        return String(left.sport || "") === String(right.sport || "")
+            && String(left.country || "") === String(right.country || "")
+            && String(left.league || "") === String(right.league || "")
+            && String(left.favoriteTeam || "") === String(right.favoriteTeam || "");
+    }
+
+    function saveOrReplaceLeague(entry, replaceIndex, makeFavorite) {
+        if (entry.league.length === 0)
+            return -1;
+
+        const saved = root.savedLeagues();
+        const copy = Object.assign({}, entry);
+        if (makeFavorite) {
+            saved.forEach(item => {
+                delete item.starred;
+            });
+            copy.starred = true;
+        } else {
+            delete copy.starred;
+        }
+
+        let targetIndex = replaceIndex;
+        if (targetIndex < 0 || targetIndex >= saved.length) {
+            targetIndex = -1;
+            for (let index = 0; index < saved.length; index += 1) {
+                if (root.sameEntry(saved[index], copy)) {
+                    targetIndex = index;
+                    break;
+                }
+            }
+        }
+
+        if (targetIndex >= 0) {
+            const previous = saved[targetIndex] || {};
+            saved[targetIndex] = Object.assign({}, previous, copy);
+            if (!makeFavorite && previous.starred)
+                saved[targetIndex].starred = true;
+        } else {
+            saved.push(copy);
+            targetIndex = saved.length - 1;
+        }
+
+        root.saveLeagues(saved);
+        root.cfg_activeSavedLeagueIndex = targetIndex;
+        root.applySavedLeague(saved[targetIndex], targetIndex);
+        return targetIndex;
+    }
+
+    function saveFavoriteEntry(entry) {
+        return root.saveOrReplaceLeague(entry, -1, true);
+    }
+
+    function saveCurrentLeague() {
+        root.saveFavoriteEntry(root.currentEntry());
+    }
+
+    function applySavedLeague(entry, index) {
+        root.cfg_selectedSports = entry.sport || "football";
+        root.cfg_country = entry.country || ProviderCatalog.defaultCountry(root.currentProvider, root.cfg_selectedSports);
+        root.cfg_league = entry.league || "";
+        root.cfg_favoriteTeam = entry.favoriteTeam || "";
+        if (index !== undefined && index >= 0)
+            root.cfg_activeSavedLeagueIndex = index;
+    }
+
+    function removeSavedLeague(index) {
+        const saved = root.savedLeagues();
+        if (index < 0 || index >= saved.length)
+            return;
+
+        saved.splice(index, 1);
+        root.saveLeagues(saved);
+        if (saved.length === 0) {
+            root.cfg_activeSavedLeagueIndex = 0;
+            root.cfg_selectedSports = "";
+            root.cfg_country = "";
+            root.cfg_league = "";
+            root.cfg_favoriteTeam = "";
+            return;
+        }
+
+        const nextIndex = Math.min(index, saved.length - 1);
+        root.cfg_activeSavedLeagueIndex = nextIndex;
+        root.applySavedLeague(saved[nextIndex], nextIndex);
+    }
+
+    function starSavedLeague(index) {
+        const saved = root.savedLeagues();
+        if (index < 0 || index >= saved.length)
+            return;
+
+        const wasStarred = !!saved[index].starred;
+        saved.forEach(entry => {
+            delete entry.starred;
+        });
+        if (!wasStarred)
+            saved[index].starred = true;
+
+        root.saveLeagues(saved);
+        if (!wasStarred) {
+            root.cfg_activeSavedLeagueIndex = index;
+            root.applySavedLeague(saved[index]);
+        }
+    }
+
+    function finishWizard(entry, saveFavorite) {
+        if (root.wizardEditingIndex >= 0) {
+            const saved = root.savedLeagues();
+            const previous = saved[root.wizardEditingIndex] || {};
+            entry = Object.assign({}, previous, entry);
+        }
+        root.saveOrReplaceLeague(entry, root.wizardEditingIndex, saveFavorite);
+        root.cfg_selectionRevision += 1;
+        root.pageIndex = 0;
+    }
+
+    function openAddSportWizard() {
+        root.wizardInitialEntry = {
+            sport: "",
+            country: "",
+            league: "",
+            favoriteTeam: ""
+        };
+        root.wizardEditingIndex = -1;
+        root.pageIndex = 1;
+    }
+
+    function openEditSavedLeague(entry, index) {
+        root.wizardInitialEntry = Object.assign({}, entry);
+        root.wizardEditingIndex = index;
+        root.pageIndex = 1;
+    }
+
+    function renameSavedLeague(index, leagueName, countryName, favoriteName) {
+        const saved = root.savedLeagues();
+        if (index < 0 || index >= saved.length)
+            return;
+
+        saved[index].customLeagueLabel = String(leagueName || "").trim();
+        saved[index].customCountryLabel = String(countryName || "").trim();
+        saved[index].customFavoriteTeamLabel = String(favoriteName || "").trim();
+        if (saved[index].customLeagueLabel.length === 0)
+            delete saved[index].customLeagueLabel;
+        if (saved[index].customCountryLabel.length === 0)
+            delete saved[index].customCountryLabel;
+        if (saved[index].customFavoriteTeamLabel.length === 0)
+            delete saved[index].customFavoriteTeamLabel;
+        root.saveLeagues(saved);
+    }
+
+    Component.onCompleted: {
+        if (!root.cfg_defaultSelectionMigrated
+                && root.cfg_selectedSports === "football"
+                && root.cfg_country === "england"
+                && root.cfg_league === "english-premier-league"
+                && root.cfg_favoriteTeam.length === 0
+                && root.savedLeagues().length === 0) {
+            root.cfg_selectedSports = "";
+            root.cfg_country = "";
+            root.cfg_league = "";
+        }
+        root.cfg_defaultSelectionMigrated = true;
+    }
+
+    Component {
+        id: sportWizardComponent
+
+        SportWizardPage {
+            settingsRoot: root
+            initialEntry: root.wizardInitialEntry
+            editingIndex: root.wizardEditingIndex
+            onCloseRequested: root.pageIndex = 0
+            onFinishRequested: (entry, saveFavorite) => root.finishWizard(entry, saveFavorite)
+        }
+    }
+
+    StackLayout {
         anchors.fill: parent
+        currentIndex: root.pageIndex
 
-        ComboBox {
-            id: selectedSports
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
 
-            Kirigami.FormData.label: i18nc("@label:listbox", "Sport:")
-            Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: ProviderCatalog.sportOptions(root.currentProvider)
-            Component.onCompleted: {
-                currentIndex = root.indexFor(model, root.firstSport());
-                if (model.length > 0 && currentIndex < 0)
-                    currentIndex = 0;
-                root.cfg_selectedSports = currentValue;
-                root.refreshCountryModel();
-            }
-            onActivated: {
-                root.cfg_selectedSports = currentValue;
-                root.refreshCountryModel();
-            }
-        }
+            RowLayout {
+                Layout.fillWidth: true
 
-        ComboBox {
-            id: country
-
-            Kirigami.FormData.label: i18nc("@label:listbox", "Country:")
-            Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: ProviderCatalog.countryOptions(root.currentProvider, selectedSports.currentValue || root.firstSport())
-            contentItem: RowLayout {
-                spacing: Kirigami.Units.smallSpacing
-
-                Kirigami.Icon {
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
-                    Layout.preferredHeight: Layout.preferredWidth
-                    source: root.countryEntry(country.currentIndex).icon || ""
-                    visible: source.length > 0
-                }
-
-                Label {
+                Kirigami.Heading {
                     Layout.fillWidth: true
-                    text: root.countryEntry(country.currentIndex).label
-                    elide: Text.ElideRight
-                    verticalAlignment: Text.AlignVCenter
+                    text: i18nc("@title:group", "Sport")
+                    level: 2
+                }
+
+                Button {
+                    Layout.alignment: Qt.AlignTop
+                    icon.name: "list-add"
+                    text: i18nc("@action:button", "Add Sport")
+                    onClicked: root.openAddSportWizard()
                 }
             }
-            delegate: ItemDelegate {
-                width: country.width
-                highlighted: country.highlightedIndex === index
 
-                contentItem: RowLayout {
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Icon {
-                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
-                        Layout.preferredHeight: Layout.preferredWidth
-                        source: modelData.icon || ""
-                        visible: source.length > 0
-                    }
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: modelData.label
-                        elide: Text.ElideRight
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
+            SavedLeaguesList {
+                Layout.fillWidth: true
+                configRoot: root
             }
-            Component.onCompleted: {
-                currentIndex = root.indexFor(model, root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, selectedSports.currentValue || root.firstSport()));
-                if (model.length > 0 && currentIndex < 0)
-                    currentIndex = 0;
-                root.cfg_country = currentValue || "";
-            }
-            onActivated: {
-                root.cfg_country = currentValue;
-                root.refreshLeagueModel();
+
+            Item {
+                Layout.preferredHeight: Kirigami.Units.smallSpacing
             }
         }
 
-        ComboBox {
-            id: league
-
-            Kirigami.FormData.label: i18nc("@label:listbox", "League:")
+        Loader {
             Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: ProviderCatalog.leagueOptions(root.currentProvider, selectedSports.currentValue || root.firstSport(), country.currentValue || root.cfg_country || ProviderCatalog.defaultCountry(root.currentProvider, selectedSports.currentValue || root.firstSport()))
-            Component.onCompleted: {
-                currentIndex = root.indexFor(model, ProviderCatalog.sportScoreSlug(root.cfg_league || "english-premier-league"));
-                if (model.length > 0 && currentIndex < 0)
-                    currentIndex = 0;
-                root.cfg_league = currentValue || "";
-                root.refreshFavoriteModel();
-            }
-            onActivated: {
-                root.cfg_league = currentValue;
-                root.refreshFavoriteModel();
-            }
+            Layout.fillHeight: true
+            active: root.pageIndex === 1
+            sourceComponent: sportWizardComponent
         }
-
-        ComboBox {
-            id: favoriteTeam
-
-            Kirigami.FormData.label: i18nc("@label:listbox", "Favorite team:")
-            Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: ProviderCatalog.favoriteTeamOptions(root.cfg_league || "english-premier-league")
-            Component.onCompleted: {
-                currentIndex = root.indexFor(model, root.cfg_favoriteTeam);
-                if (currentIndex < 0)
-                    currentIndex = 0;
-            }
-            onActivated: root.cfg_favoriteTeam = currentValue
-        }
-
-        CheckBox {
-            id: prioritizePopular
-
-            text: i18nc("@option:check", "Show popular matches first")
-        }
-
     }
 
 }

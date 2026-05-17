@@ -123,12 +123,12 @@ Control {
             visible: parent.loading
         }
 
-        Image {
+        Kirigami.Icon {
             anchors.fill: parent
             source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(parent.sport))
             visible: !parent.loading
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
+            isMask: true
+            color: Kirigami.Theme.textColor
         }
 
     }

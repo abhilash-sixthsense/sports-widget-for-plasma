@@ -7,6 +7,8 @@
 
 function normalizedSport(value) {
     const sport = String(value || "").toLowerCase();
+    if (sport.length === 0)
+        return "";
     if (sport.indexOf("american") >= 0 || sport === "nfl")
         return "american-football";
     if (sport.indexOf("basket") >= 0 || sport === "nba")
@@ -21,11 +23,14 @@ function normalizedSport(value) {
         return "snooker";
     if (sport.indexOf("tennis") >= 0)
         return "tennis";
+    if (sport.indexOf("volley") >= 0)
+        return "volleyball";
     return "football";
 }
 
 function iconName(value) {
-    return normalizedSport(value) + ".svg";
+    const sport = normalizedSport(value);
+    return (sport.length > 0 ? sport : "sports") + ".svg";
 }
 
 function label(value) {
@@ -38,7 +43,8 @@ function label(value) {
         "football": "Football",
         "hockey": "Hockey",
         "snooker": "Snooker",
-        "tennis": "Tennis"
+        "tennis": "Tennis",
+        "volleyball": "Volleyball"
     };
     return labels[sport] || "Sports";
 }

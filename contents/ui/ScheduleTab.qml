@@ -14,6 +14,9 @@ Item {
     property var scheduleModel
     property string favoriteTeam: ""
     property bool loading: false
+    property int selectedIndex: 0
+
+    signal matchSelected(int index)
 
     function isFavoriteTeam(teamName) {
         const favorite = root.favoriteTeam.toLowerCase();
@@ -54,6 +57,8 @@ Item {
             poster: model.poster
             popular: model.popular
             favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
+            selected: index === root.selectedIndex
+            onClicked: root.matchSelected(index)
         }
     }
 
@@ -73,7 +78,7 @@ Item {
         PlasmaComponents.Label {
             Layout.fillWidth: true
             text: i18nc("@info:status", "Loading schedules")
-            color: "#9db7be"
+            color: Kirigami.Theme.disabledTextColor
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
         }
@@ -92,13 +97,13 @@ Item {
                 Layout.preferredWidth: Kirigami.Units.iconSizes.large
                 Layout.preferredHeight: Layout.preferredWidth
                 source: "view-calendar-day"
-                color: "#9db7be"
+                color: Kirigami.Theme.disabledTextColor
             }
 
             PlasmaComponents.Label {
                 Layout.fillWidth: true
                 text: parent.parent.text
-                color: "#9db7be"
+                color: Kirigami.Theme.disabledTextColor
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
             }

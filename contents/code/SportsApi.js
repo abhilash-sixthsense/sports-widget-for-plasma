@@ -433,35 +433,6 @@ function fetchMatchStats(options, onSuccess, onError) {
     onSuccess([]);
 }
 
-function fetchLegacyLiveScores(options, onSuccess, onError) {
-    fetchLiveScores(options, onSuccess, onError);
-}
-
-function fetchLegacyLeagueTable(options, onSuccess, onError) {
-    fetchLeagueTable(options, onSuccess, onError);
-}
-
-function fetchLegacyScoresFixtures(options, onSuccess, onError) {
-    fetchScoresFixtures(options, onSuccess, onError);
-}
-
-function fetchSportScoreTable(options, onSuccess, onError) {
-    const league = String(options.league || "PL").trim().toUpperCase();
-    if (ProviderCatalog.sportScoreSlug(league).length === 0) {
-        onSuccess([]);
-        return;
-    }
-
-    fetchProviderTable("sportscore", withProvider(options, "sportscore"), onSuccess, onError);
-}
-
-function withProvider(options, provider) {
-    const copy = Object.assign({}, options);
-    copy.provider = provider;
-    copy.baseUrl = ProviderCatalog.defaultBaseUrl("sportscore");
-    return copy;
-}
-
 function fetchProviderMatches(provider, type, options, onSuccess, onError) {
     if (missingProviderKey(provider, options, onError))
         return;
@@ -719,89 +690,6 @@ function normalizeSports(value) {
         .split(",")
         .map(sport => sport.trim().toLowerCase())
         .filter(Boolean);
-}
-
-function demoMatches() {
-    return [
-        {
-            sport: "football",
-            league: "Premier League",
-            homeTeam: "Arsenal",
-            awayTeam: "Chelsea",
-            homeScore: "2",
-            awayScore: "1",
-            status: "Live",
-            minute: "72'",
-            startTime: "",
-            homeBadge: "",
-            awayBadge: "",
-            poster: "",
-            popular: true
-        },
-        {
-            sport: "basketball",
-            league: "NBA",
-            homeTeam: "Boston Celtics",
-            awayTeam: "New York Knicks",
-            homeScore: "88",
-            awayScore: "83",
-            status: "Q4",
-            minute: "08:14",
-            startTime: "",
-            homeBadge: "",
-            awayBadge: "",
-            poster: "",
-            popular: true
-        },
-        {
-            sport: "hockey",
-            league: "NHL",
-            homeTeam: "New York Rangers",
-            awayTeam: "Boston Bruins",
-            homeScore: "1",
-            awayScore: "1",
-            status: "2nd",
-            minute: "12:31",
-            startTime: "",
-            homeBadge: "",
-            awayBadge: "",
-            poster: "",
-            popular: false
-        }
-    ];
-}
-
-function demoTable() {
-    return [
-        { position: 1, team: "Arsenal", played: 36, won: 24, draw: 7, lost: 5, goalsFor: 68, goalsAgainst: 26, points: 79, goalDifference: 42, form: "W,L,L,W,W", crest: "" },
-        { position: 2, team: "Man City", played: 35, won: 22, draw: 8, lost: 5, goalsFor: 72, goalsAgainst: 32, points: 74, goalDifference: 40, form: "W,D,W,W,W", crest: "" },
-        { position: 3, team: "Man United", played: 36, won: 18, draw: 11, lost: 7, goalsFor: 63, goalsAgainst: 48, points: 65, goalDifference: 15, form: "D,L,W,W,W", crest: "" },
-        { position: 4, team: "Liverpool", played: 36, won: 17, draw: 8, lost: 11, goalsFor: 60, goalsAgainst: 48, points: 59, goalDifference: 12, form: "D,L,W,W,W", crest: "" },
-        { position: 5, team: "Aston Villa", played: 36, won: 17, draw: 8, lost: 11, goalsFor: 50, goalsAgainst: 46, points: 59, goalDifference: 4, form: "D,L,L,W,D", crest: "" },
-        { position: 6, team: "Bournemouth", played: 36, won: 13, draw: 16, lost: 7, goalsFor: 56, goalsAgainst: 52, points: 55, goalDifference: 4, form: "D,W,W,D,W", crest: "" },
-        { position: 7, team: "Brighton Hove", played: 36, won: 14, draw: 11, lost: 11, goalsFor: 52, goalsAgainst: 42, points: 53, goalDifference: 10, form: "W,W,D,W,L", crest: "" },
-        { position: 8, team: "Brentford", played: 36, won: 14, draw: 9, lost: 13, goalsFor: 52, goalsAgainst: 49, points: 51, goalDifference: 3, form: "D,D,D,L,W", crest: "" },
-        { position: 9, team: "Chelsea", played: 36, won: 13, draw: 10, lost: 13, goalsFor: 55, goalsAgainst: 49, points: 49, goalDifference: 6, form: "L,L,L,L,L", crest: "" },
-        { position: 10, team: "Everton", played: 36, won: 13, draw: 10, lost: 13, goalsFor: 46, goalsAgainst: 46, points: 49, goalDifference: 0, form: "W,D,L,L,D", crest: "" },
-        { position: 11, team: "Fulham", played: 36, won: 14, draw: 6, lost: 16, goalsFor: 44, goalsAgainst: 50, points: 48, goalDifference: -6, form: "W,L,D,W,L", crest: "" },
-        { position: 12, team: "Sunderland", played: 36, won: 12, draw: 12, lost: 12, goalsFor: 37, goalsAgainst: 46, points: 48, goalDifference: -9, form: "W,W,D,L,L", crest: "" },
-        { position: 13, team: "Newcastle", played: 36, won: 13, draw: 7, lost: 16, goalsFor: 50, goalsAgainst: 52, points: 46, goalDifference: -2, form: "L,W,D,L,W", crest: "" },
-        { position: 14, team: "Leeds United", played: 36, won: 10, draw: 14, lost: 12, goalsFor: 48, goalsAgainst: 53, points: 44, goalDifference: -5, form: "D,W,L,D,W", crest: "" },
-        { position: 15, team: "Crystal Palace", played: 35, won: 11, draw: 11, lost: 13, goalsFor: 38, goalsAgainst: 44, points: 44, goalDifference: -6, form: "D,W,L,W,L", crest: "" },
-        { position: 16, team: "Nottingham", played: 36, won: 11, draw: 10, lost: 15, goalsFor: 45, goalsAgainst: 47, points: 43, goalDifference: -2, form: "D,L,W,L,D", crest: "" },
-        { position: 17, team: "Tottenham", played: 36, won: 9, draw: 11, lost: 16, goalsFor: 46, goalsAgainst: 55, points: 38, goalDifference: -9, form: "D,W,W,D,L", crest: "" },
-        { position: 18, team: "West Ham", played: 36, won: 9, draw: 9, lost: 18, goalsFor: 42, goalsAgainst: 62, points: 36, goalDifference: -20, form: "L,L,W,D,W", crest: "" },
-        { position: 19, team: "Burnley", played: 36, won: 4, draw: 9, lost: 23, goalsFor: 37, goalsAgainst: 73, points: 21, goalDifference: -36, form: "D,L,L,L,L", crest: "" },
-        { position: 20, team: "Wolverhampton", played: 36, won: 3, draw: 9, lost: 24, goalsFor: 25, goalsAgainst: 66, points: 18, goalDifference: -41, form: "L,D,L,L,L", crest: "" }
-    ];
-}
-
-function demoFixtures() {
-    return [
-        { homeTeam: "Liverpool", awayTeam: "Chelsea", homeScore: "1", awayScore: "1", status: "Finished", startTime: "09.05 14:30", matchday: "MD 36", homeBadge: "", awayBadge: "" },
-        { homeTeam: "Manchester City", awayTeam: "Brentford", homeScore: "3", awayScore: "0", status: "Finished", startTime: "09.05 19:30", matchday: "MD 36", homeBadge: "", awayBadge: "" },
-        { homeTeam: "Tottenham", awayTeam: "Leeds United", homeScore: "1", awayScore: "1", status: "Finished", startTime: "11.05 22:00", matchday: "MD 36", homeBadge: "", awayBadge: "" }
-    ];
 }
 
 function normalizeSportScoreMatch(match, sport) {

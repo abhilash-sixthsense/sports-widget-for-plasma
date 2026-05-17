@@ -30,6 +30,11 @@ Item {
     property string league: "PL"
     property string favoriteTeam: ""
     property string sport: "football"
+    property bool hasSavedLeagues: true
+    property int savedLeagueCount: 0
+    property int activeSavedLeagueIndex: -1
+    property string activeLeagueLabel: ""
+    property string activeCountryLabel: ""
     property int sportCount: 0
     property int tableCount: 0
     property int fixtureCount: 0
@@ -37,10 +42,13 @@ Item {
     property string widgetTabs: "all"
     property string nowText: Qt.formatDateTime(new Date(), "dd.MM.yyyy hh:mm:ss")
     property int activeTab: 0
+    property int selectedScoreIndex: 0
     readonly property bool hasMatches: scoreModel && scoreModel.count > 0
 
     signal refreshRequested()
     signal configureRequested()
+    signal previousLeagueRequested()
+    signal nextLeagueRequested()
 
     function isFavoriteTeam(teamName) {
         const favorite = root.favoriteTeam.toLowerCase();
@@ -73,11 +81,24 @@ Item {
         root.activeTab = root.tabVisible(tab) ? tab : 0;
     }
 
+    function selectedMatchValue(field, fallback) {
+        if (!root.hasMatches)
+            return fallback;
+
+        const index = Math.max(0, Math.min(root.selectedScoreIndex, root.scoreModel.count - 1));
+        const match = root.scoreModel.get(index);
+        return match && match[field] !== undefined ? match[field] : fallback;
+    }
+
+    function withAlpha(color, alpha) {
+        return Qt.rgba(color.r, color.g, color.b, alpha);
+    }
+
     onWidgetTabsChanged: activateTab(activeTab)
-    Layout.minimumWidth: Kirigami.Units.gridUnit * 30
-    Layout.minimumHeight: Kirigami.Units.gridUnit * 30
-    Layout.preferredWidth: Kirigami.Units.gridUnit * 40
-    Layout.preferredHeight: Kirigami.Units.gridUnit * 43
+    Layout.minimumWidth: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 30 : Kirigami.Units.gridUnit * 18
+    Layout.minimumHeight: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 30 : Kirigami.Units.gridUnit * 14
+    Layout.preferredWidth: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 40 : Kirigami.Units.gridUnit * 22
+    Layout.preferredHeight: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 43 : Kirigami.Units.gridUnit * 16
 
     Timer {
         interval: 1000
@@ -86,10 +107,56 @@ Item {
         onTriggered: root.nowText = Qt.formatDateTime(new Date(), "dd.MM.yyyy hh:mm:ss")
     }
 
+    Item {
+        anchors.fill: parent
+        anchors.margins: Kirigami.Units.largeSpacing
+        visible: !root.hasSavedLeagues
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            width: Math.min(parent.width, Kirigami.Units.gridUnit * 18)
+            spacing: Kirigami.Units.largeSpacing
+
+            Kirigami.Icon {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: Kirigami.Units.iconSizes.huge
+                Layout.preferredHeight: Layout.preferredWidth
+                source: Qt.resolvedUrl("../icons/sports/sports.svg")
+                isMask: true
+                color: Kirigami.Theme.disabledTextColor
+            }
+
+            PlasmaComponents.Label {
+                Layout.fillWidth: true
+                text: i18nc("@info:status", "No sports added")
+                color: Kirigami.Theme.textColor
+                horizontalAlignment: Text.AlignHCenter
+                font.bold: true
+                font.pixelSize: Kirigami.Units.gridUnit
+            }
+
+            PlasmaComponents.Label {
+                Layout.fillWidth: true
+                text: i18nc("@info", "Add a sport and league to show schedules, tables and fixtures.")
+                color: Kirigami.Theme.disabledTextColor
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+
+            Button {
+                Layout.alignment: Qt.AlignHCenter
+                icon.name: "list-add"
+                text: i18nc("@action:button", "Add a Sport")
+                onClicked: root.configureRequested()
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Kirigami.Units.largeSpacing
         spacing: Kirigami.Units.smallSpacing
+        visible: root.hasSavedLeagues
 
         RowLayout {
             Layout.fillWidth: true
@@ -99,26 +166,56 @@ Item {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                Image {
+                ToolButton {
+                    icon.name: "go-previous"
+                    display: AbstractButton.IconOnly
+                    text: i18nc("@action:button", "Previous saved league")
+                    visible: root.savedLeagueCount > 1
+                    onClicked: root.previousLeagueRequested()
+                }
+
+                Kirigami.Icon {
                     Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                     Layout.preferredHeight: Layout.preferredWidth
                     source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(root.sport))
-                    fillMode: Image.PreserveAspectFit
-                    asynchronous: true
+                    isMask: true
+                    color: Kirigami.Theme.textColor
                 }
 
-                PlasmaComponents.Label {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: SportVisuals.label(root.sport)
-                    color: "#e7fbff"
-                    elide: Text.ElideRight
-                    font.bold: true
+                    spacing: 0
+
+                    PlasmaComponents.Label {
+                        Layout.fillWidth: true
+                        text: root.activeLeagueLabel.length > 0 ? root.activeLeagueLabel : SportVisuals.label(root.sport)
+                        color: Kirigami.Theme.textColor
+                        elide: Text.ElideRight
+                        font.bold: true
+                    }
+
+                    PlasmaComponents.Label {
+                        Layout.fillWidth: true
+                        text: [SportVisuals.label(root.sport), root.activeCountryLabel].filter(part => String(part || "").length > 0).join(" · ")
+                        color: Kirigami.Theme.disabledTextColor
+                        elide: Text.ElideRight
+                        visible: text.length > 0
+                        font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                    }
+                }
+
+                ToolButton {
+                    icon.name: "go-next"
+                    display: AbstractButton.IconOnly
+                    text: i18nc("@action:button", "Next saved league")
+                    visible: root.savedLeagueCount > 1
+                    onClicked: root.nextLeagueRequested()
                 }
             }
 
             PlasmaComponents.Label {
                 text: root.nowText
-                color: "#e7fbff"
+                color: Kirigami.Theme.textColor
                 font.bold: true
             }
 
@@ -140,16 +237,17 @@ Item {
 
         MatchHero {
             Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit * 7
-            homeTeam: root.hasMatches ? root.scoreModel.get(0).homeTeam : i18nc("@info:placeholder", "Home team")
-            awayTeam: root.hasMatches ? root.scoreModel.get(0).awayTeam : i18nc("@info:placeholder", "Away team")
-            homeScore: root.hasMatches ? root.scoreModel.get(0).homeScore : ""
-            awayScore: root.hasMatches ? root.scoreModel.get(0).awayScore : ""
-            status: root.hasMatches ? root.scoreModel.get(0).status : i18nc("@info:status", "No schedules")
-            minute: root.hasMatches ? root.scoreModel.get(0).minute : ""
-            startTime: root.hasMatches ? root.scoreModel.get(0).startTime : ""
-            homeBadge: root.hasMatches ? root.scoreModel.get(0).homeBadge : ""
-            awayBadge: root.hasMatches ? root.scoreModel.get(0).awayBadge : ""
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+            homeTeam: root.selectedMatchValue("homeTeam", i18nc("@info:placeholder", "Home team"))
+            awayTeam: root.selectedMatchValue("awayTeam", i18nc("@info:placeholder", "Away team"))
+            homeScore: root.selectedMatchValue("homeScore", "")
+            awayScore: root.selectedMatchValue("awayScore", "")
+            status: root.selectedMatchValue("status", i18nc("@info:status", "No schedules"))
+            minute: root.selectedMatchValue("minute", "")
+            startTime: root.selectedMatchValue("startTime", "")
+            stadium: root.selectedMatchValue("stadium", "")
+            homeBadge: root.selectedMatchValue("homeBadge", "")
+            awayBadge: root.selectedMatchValue("awayBadge", "")
             loading: root.loading || root.schedulesLoading
         }
 
@@ -159,7 +257,7 @@ Item {
             Layout.leftMargin: -Kirigami.Units.largeSpacing
             Layout.rightMargin: -Kirigami.Units.largeSpacing
             radius: height / 2
-            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.07)
+            color: root.withAlpha(Kirigami.Theme.alternateBackgroundColor, 0.5)
 
             RowLayout {
                 anchors.fill: parent
@@ -214,6 +312,10 @@ Item {
                 scheduleModel: root.scoreModel
                 favoriteTeam: root.favoriteTeam
                 loading: root.loading || root.schedulesLoading
+                selectedIndex: root.selectedScoreIndex
+                onMatchSelected: (index) => {
+                    root.selectedScoreIndex = index;
+                }
             }
 
             StatsTab {
@@ -226,6 +328,7 @@ Item {
                 tableCount: root.tableCount
                 tableErrorMessage: root.tableErrorMessage
                 league: root.league
+                leagueLabel: root.activeLeagueLabel
                 sport: root.sport
                 favoriteTeam: root.favoriteTeam
             }
@@ -240,7 +343,7 @@ Item {
         PlasmaComponents.Label {
             Layout.fillWidth: true
             text: (root.lastUpdatedText.length > 0 ? root.lastUpdatedText : i18nc("@info:status", "Waiting for update")) + " · " + i18nc("@label", "Provider: %1", root.providerLabel)
-            color: "#e7fbff"
+            color: Kirigami.Theme.textColor
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
             font.pixelSize: Kirigami.Theme.smallFont.pixelSize
@@ -258,6 +361,7 @@ Item {
         property string status: ""
         property string minute: ""
         property string startTime: ""
+        property string stadium: ""
         property string homeBadge: ""
         property string awayBadge: ""
         property bool loading: false
@@ -285,30 +389,25 @@ Item {
         color: "transparent"
         clip: false
 
-        RowLayout {
+        Item {
             anchors.fill: parent
             anchors.leftMargin: Kirigami.Units.smallSpacing
             anchors.rightMargin: Kirigami.Units.smallSpacing
             anchors.topMargin: Kirigami.Units.smallSpacing
             anchors.bottomMargin: Kirigami.Units.smallSpacing
-            spacing: Kirigami.Units.largeSpacing
-
-            HeroTeam {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                name: hero.homeTeam
-                badge: hero.homeBadge
-            }
 
             ColumnLayout {
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 8
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 2
+                id: heroScoreColumn
+
+                width: Kirigami.Units.gridUnit * 10.5
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 1
 
                 PlasmaComponents.Label {
                     Layout.fillWidth: true
                     text: hero.scoreText()
-                    color: "#ffffff"
+                    color: Kirigami.Theme.textColor
                     horizontalAlignment: Text.AlignHCenter
                     font.bold: true
                     font.pixelSize: Kirigami.Units.gridUnit * 1.25
@@ -317,18 +416,62 @@ Item {
                 PlasmaComponents.Label {
                     Layout.fillWidth: true
                     text: hero.detailText()
-                    color: "#ff7a00"
+                    color: hero.status === "Live" ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.highlightColor
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                     font.bold: true
                     font.pixelSize: Kirigami.Theme.smallFont.pixelSize
                 }
 
+                RowLayout {
+                    readonly property int stadiumIconSize: Math.round(Kirigami.Units.iconSizes.smallMedium * 1.1)
+
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.maximumWidth: heroScoreColumn.width
+                    Layout.topMargin: Kirigami.Units.smallSpacing
+                    visible: hero.stadium.length > 0 && !hero.loading
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Kirigami.Icon {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: parent.stadiumIconSize
+                        Layout.preferredHeight: Layout.preferredWidth
+                        source: Qt.resolvedUrl("../icons/sports/stadium.svg")
+                        isMask: true
+                        color: Kirigami.Theme.disabledTextColor
+                    }
+
+                    PlasmaComponents.Label {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.maximumWidth: heroScoreColumn.width - parent.stadiumIconSize - Kirigami.Units.smallSpacing
+                        text: hero.stadium
+                        color: Kirigami.Theme.disabledTextColor
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        font.pixelSize: Kirigami.Theme.defaultFont.pixelSize
+                    }
+                }
+
             }
 
             HeroTeam {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                anchors.left: parent.left
+                anchors.right: heroScoreColumn.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.rightMargin: Kirigami.Units.largeSpacing
+                height: parent.height
+                name: hero.homeTeam
+                badge: hero.homeBadge
+            }
+
+            HeroTeam {
+                anchors.left: heroScoreColumn.right
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Kirigami.Units.largeSpacing
+                height: parent.height
                 name: hero.awayTeam
                 badge: hero.awayBadge
             }
@@ -340,12 +483,14 @@ Item {
     component HeroTeam: ColumnLayout {
         property string name: ""
         property string badge: ""
+        readonly property int badgeSize: Kirigami.Units.iconSizes.huge + Kirigami.Units.gridUnit
+        readonly property int backingSize: Math.ceil(badgeSize * Math.max(1, Screen.devicePixelRatio) * 2)
 
-        spacing: Kirigami.Units.smallSpacing
+        spacing: 2
 
         Item {
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Kirigami.Units.iconSizes.huge
+            Layout.preferredWidth: parent.badgeSize
             Layout.preferredHeight: Layout.preferredWidth
 
             Image {
@@ -354,13 +499,17 @@ Item {
                 visible: badge.length > 0
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
+                cache: true
+                smooth: true
+                sourceSize.width: parent.parent.backingSize
+                sourceSize.height: parent.parent.backingSize
             }
 
             Kirigami.Icon {
                 anchors.fill: parent
                 source: "applications-games"
                 visible: badge.length === 0
-                color: "#f4f4f4"
+                color: Kirigami.Theme.disabledTextColor
                 opacity: 0.9
             }
 
@@ -369,11 +518,11 @@ Item {
         PlasmaComponents.Label {
             Layout.fillWidth: true
             text: name
-            color: "#ffffff"
+            color: Kirigami.Theme.textColor
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
             font.bold: true
-            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+            font.pixelSize: Math.max(Kirigami.Theme.defaultFont.pixelSize, Kirigami.Theme.smallFont.pixelSize + 2)
         }
 
     }
@@ -389,14 +538,14 @@ Item {
         Layout.fillWidth: true
         Layout.fillHeight: true
         radius: 14
-        color: active ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.17) : "transparent"
+        color: active ? root.withAlpha(Kirigami.Theme.highlightColor, 0.5) : "transparent"
 
         PlasmaComponents.Label {
             anchors.centerIn: parent
             width: Math.max(0, parent.width - Kirigami.Units.largeSpacing)
             text: tab.label
-            color: Kirigami.Theme.textColor
-            opacity: tab.active ? 1 : 0.42
+            color: tab.active ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+            opacity: tab.active ? 1 : 0.65
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -429,7 +578,7 @@ Item {
     component InfoNumber: ColumnLayout {
         property string label: ""
         property var value: ""
-        property color accent: "#ffffff"
+        property color accent: Kirigami.Theme.textColor
 
         Layout.fillWidth: true
         spacing: 0
@@ -437,7 +586,7 @@ Item {
         PlasmaComponents.Label {
             Layout.fillWidth: true
             text: label
-            color: "#e7fbff"
+            color: Kirigami.Theme.textColor
             horizontalAlignment: Text.AlignRight
             opacity: 0.9
         }
@@ -466,13 +615,13 @@ Item {
                 Layout.preferredWidth: Kirigami.Units.iconSizes.large
                 Layout.preferredHeight: Layout.preferredWidth
                 source: "view-calendar-day"
-                color: "#9db7be"
+                color: Kirigami.Theme.disabledTextColor
             }
 
             PlasmaComponents.Label {
                 Layout.fillWidth: true
                 text: parent.parent.text
-                color: "#9db7be"
+                color: Kirigami.Theme.disabledTextColor
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
             }
@@ -508,7 +657,7 @@ Item {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: statsRow.homeValue
-                    color: "#d9d9d9"
+                    color: Kirigami.Theme.textColor
                     font.bold: statsRow.homeHighlight
                     font.pixelSize: Kirigami.Theme.smallFont.pixelSize
                 }
@@ -516,7 +665,7 @@ Item {
                 PlasmaComponents.Label {
                     anchors.centerIn: parent
                     text: statsRow.label
-                    color: "#a8a8a8"
+                    color: Kirigami.Theme.disabledTextColor
                     font.pixelSize: Kirigami.Theme.smallFont.pixelSize
                     elide: Text.ElideRight
                     maximumLineCount: 1
@@ -528,7 +677,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: statsRow.awayValue
-                    color: "#d9d9d9"
+                    color: Kirigami.Theme.textColor
                     font.bold: statsRow.awayHighlight
                     font.pixelSize: Kirigami.Theme.smallFont.pixelSize
                 }
@@ -566,14 +715,14 @@ Item {
         property bool mirrored: false
 
         radius: height / 2
-        color: Qt.rgba(1, 1, 1, 0.1)
+        color: root.withAlpha(Kirigami.Theme.alternateBackgroundColor, 0.5)
 
         Rectangle {
             height: parent.height
             width: Math.max(0, parent.width * Math.min(1, Math.max(0, ratio)))
             x: mirrored ? parent.width - width : 0
             radius: parent.radius
-            color: highlight ? "#ff7a00" : Qt.rgba(1, 1, 1, 0.62)
+            color: highlight ? root.withAlpha(Kirigami.Theme.highlightColor, 0.5) : root.withAlpha(Kirigami.Theme.disabledTextColor, 0.5)
         }
 
     }
@@ -593,7 +742,7 @@ Item {
             PlasmaComponents.Label {
                 width: parent.width
                 text: parent.parent.title
-                color: "#ffffff"
+                color: Kirigami.Theme.textColor
                 elide: Text.ElideRight
                 font.bold: true
                 font.pixelSize: Kirigami.Units.gridUnit * 1.1
@@ -675,7 +824,7 @@ Item {
     component HeaderLabel: PlasmaComponents.Label {
         property string tooltip: ""
 
-        color: "#9db7be"
+        color: Kirigami.Theme.disabledTextColor
         font.bold: true
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
@@ -703,14 +852,14 @@ Item {
         property bool favorite: false
 
         height: Kirigami.Units.gridUnit * 2.7
-        color: favorite ? Qt.rgba(1, 0.59, 0.31, 0.14) : "transparent"
+        color: favorite ? root.withAlpha(Kirigami.Theme.alternateBackgroundColor, 0.5) : "transparent"
 
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 1
-            color: Qt.rgba(1, 1, 1, 0.09)
+            color: root.withAlpha(Kirigami.Theme.separatorColor, 0.5)
         }
 
         RowLayout {
@@ -721,7 +870,7 @@ Item {
 
             PlasmaComponents.Label {
                 text: position
-                color: "#e7fbff"
+                color: Kirigami.Theme.textColor
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 1.35
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: Kirigami.Units.gridUnit
@@ -738,7 +887,7 @@ Item {
 
             PlasmaComponents.Label {
                 text: team
-                color: "#e7fbff"
+                color: Kirigami.Theme.textColor
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 font.bold: true
@@ -781,7 +930,7 @@ Item {
 
             RowValue {
                 text: points
-                color: "#ffffff"
+                color: Kirigami.Theme.textColor
                 font.bold: true
                 font.pixelSize: Kirigami.Units.gridUnit * 1.25
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 2.8
@@ -816,7 +965,7 @@ Item {
         }
 
         height: Kirigami.Units.gridUnit * 3
-        color: favorite ? Qt.rgba(1, 0.59, 0.31, 0.14) : "transparent"
+        color: favorite ? root.withAlpha(Kirigami.Theme.alternateBackgroundColor, 0.5) : "transparent"
 
         RowLayout {
             anchors.fill: parent
@@ -827,7 +976,7 @@ Item {
             PlasmaComponents.Label {
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 4.5
                 text: startTime
-                color: "#9db7be"
+                color: Kirigami.Theme.disabledTextColor
                 elide: Text.ElideRight
             }
 
@@ -840,7 +989,7 @@ Item {
             PlasmaComponents.Label {
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 4
                 text: scoreText(homeScore, awayScore)
-                color: "#ffffff"
+                color: Kirigami.Theme.textColor
                 horizontalAlignment: Text.AlignHCenter
                 font.bold: true
             }
@@ -854,7 +1003,7 @@ Item {
             PlasmaComponents.Label {
                 Layout.preferredWidth: Kirigami.Units.gridUnit * 4
                 text: status
-                color: status === "Live" ? "#6ee7a7" : "#9db7be"
+                color: status === "Live" ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.disabledTextColor
                 horizontalAlignment: Text.AlignRight
                 elide: Text.ElideRight
             }
@@ -881,14 +1030,14 @@ Item {
         PlasmaComponents.Label {
             Layout.fillWidth: true
             text: name
-            color: "#e7fbff"
+            color: Kirigami.Theme.textColor
             elide: Text.ElideRight
         }
 
     }
 
     component RowValue: PlasmaComponents.Label {
-        color: "#d7eef2"
+        color: Kirigami.Theme.textColor
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
     }
@@ -916,16 +1065,16 @@ Item {
                     color: {
                         const result = String(modelData).toUpperCase();
                         if (result === "W")
-                            return "#0b8f08";
+                            return Kirigami.Theme.positiveTextColor;
                         if (result === "L")
-                            return "#e91e63";
-                        return "#5f6368";
+                            return Kirigami.Theme.negativeTextColor;
+                        return Kirigami.Theme.neutralTextColor;
                     }
 
                     PlasmaComponents.Label {
                         anchors.centerIn: parent
                         text: String(modelData).charAt(0).toUpperCase()
-                        color: "#ffffff"
+                        color: Kirigami.Theme.backgroundColor
                         font.bold: true
                         font.pixelSize: Math.max(8, Kirigami.Theme.smallFont.pixelSize - 1)
                     }
@@ -937,7 +1086,7 @@ Item {
             anchors.centerIn: parent
             visible: parent.results().length === 0
             text: "-"
-            color: "#9db7be"
+            color: Kirigami.Theme.disabledTextColor
         }
     }
 

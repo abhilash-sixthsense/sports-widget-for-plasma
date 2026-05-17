@@ -9656,6 +9656,7 @@ const COUNTRY_FLAG_CODES = {
     "costa-rica": "cr",
     "croatia": "hr",
     "cuba": "cu",
+    "curacao": "an",
     "cyprus": "cy",
     "czech-republic": "cz",
     "democratic-republic-of-the-congo": "cd",
@@ -9701,6 +9702,7 @@ const COUNTRY_FLAG_CODES = {
     "jordan": "jo",
     "kazakhstan": "kz",
     "kenya": "ke",
+    "kosovo": "xk",
     "kuwait": "kw",
     "kyrgyzstan": "kg",
     "laos": "la",
@@ -9797,7 +9799,15 @@ const COUNTRY_FLAG_CODES = {
 };
 
 function countryOptions() {
-    return FOOTBALL_COUNTRIES.map(country => ({ label: country.label, value: country.value, icon: flagSource(country.value) }));
+    return FOOTBALL_COUNTRIES.map(country => {
+        const isWorld = country.value === "world";
+        return {
+            label: isWorld ? "International Tournaments" : country.label,
+            value: country.value,
+            icon: flagSource(country.value),
+            infoText: isWorld ? country.leagues.map(league => league.label).join("\n") : ""
+        };
+    });
 }
 
 function leagueOptions(countryCode) {
@@ -9830,9 +9840,16 @@ function countryByCode(countryCode) {
 }
 
 function flagSource(countryCode) {
-    const code = COUNTRY_FLAG_CODES[String(countryCode || "").trim().toLowerCase()] || "";
+    const country = String(countryCode || "").trim().toLowerCase();
+    if (country === "world")
+        return "globe";
+
+    const code = COUNTRY_FLAG_CODES[country] || "";
     if (code.length === 0)
-        return countryCode === "world" ? "globe" : "";
+        return "";
+
+    if (code === "xk")
+        return "flag";
 
     return `file:///usr/share/locale/l10n/${code}/flag.png`;
 }

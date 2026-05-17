@@ -18,6 +18,7 @@ Item {
     property int tableCount: 0
     property string tableErrorMessage: ""
     property string league: "PL"
+    property string leagueLabel: ""
     property string sport: "football"
     property string favoriteTeam: ""
     readonly property int rowCount: tableRows ? tableRows.length : 0
@@ -53,7 +54,7 @@ Item {
     }
 
     function leagueTitle() {
-        const label = ProviderCatalog.leagueLabel(root.league);
+        const label = root.leagueLabel.length > 0 ? root.leagueLabel : ProviderCatalog.leagueLabel(root.league);
         return label.length > 0 ? i18nc("@label", "%1 Table", label) : i18nc("@label", "League Table");
     }
 
