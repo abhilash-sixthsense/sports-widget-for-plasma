@@ -17,12 +17,18 @@ Item {
     property var tableRows: []
     property int tableCount: 0
     property string tableErrorMessage: ""
+    property bool tableLoading: false
     property string league: "PL"
     property string leagueLabel: ""
     property string sport: "football"
     property string favoriteTeam: ""
+    property bool followTeamMode: false
+    property var tableOptions: []
+    property string selectedTableSlug: ""
     readonly property int rowCount: tableRows ? tableRows.length : 0
     readonly property var displayRows: groupedRows()
+
+    signal tableSelected(string slug)
 
     function groupedRows() {
         const rows = root.tableRows || [];
@@ -58,46 +64,68 @@ Item {
         return label.length > 0 ? i18nc("@label", "%1 Table", label) : i18nc("@label", "League Table");
     }
 
-    ListView {
-        id: tableList
-
-        anchors.fill: parent
-        clip: true
-        spacing: 0
-        boundsBehavior: Flickable.StopAtBounds
-        model: root.displayRows
-        ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
+    function selectedTableLabel() {
+        const selected = ProviderCatalog.sportScoreSlug(root.selectedTableSlug);
+        const options = Array.isArray(root.tableOptions) ? root.tableOptions : [];
+        for (let index = 0; index < options.length; index += 1) {
+            const option = options[index] || {};
+            if (ProviderCatalog.sportScoreSlug(option.slug) === selected)
+                return String(option.label || "").trim();
         }
 
-        readonly property int contentColumnWidth: Math.max(0, width - Kirigami.Units.gridUnit)
-
-        header: TableHeader {
-            width: tableList.contentColumnWidth
-            title: root.leagueTitle()
-        }
-
-        delegate: Loader {
-            id: rowLoader
-
-            width: tableList.contentColumnWidth
-            height: item ? item.height : 0
-            sourceComponent: modelData.isGroupHeader ? groupHeaderComponent : tableRowComponent
-
-            readonly property var rowData: modelData
-
-            onLoaded: item.rowData = rowData
-            onRowDataChanged: {
-                if (item)
-                    item.rowData = rowData;
-            }
-        }
+        return root.leagueLabel.length > 0 ? root.leagueLabel : root.leagueTitle().replace(/\s+Table$/, "");
     }
 
-    EmptyState {
+    ColumnLayout {
         anchors.fill: parent
-        visible: root.rowCount === 0
-        text: root.tableErrorMessage.length > 0 ? root.tableErrorMessage : i18nc("@info:placeholder", "No table data")
+        spacing: Kirigami.Units.smallSpacing
+
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ListView {
+                id: tableList
+
+                anchors.fill: parent
+                clip: true
+                spacing: 0
+                boundsBehavior: Flickable.StopAtBounds
+                model: root.displayRows
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
+                readonly property int contentColumnWidth: Math.max(0, width - Kirigami.Units.gridUnit)
+
+                header: TableHeader {
+                    width: tableList.contentColumnWidth
+                    title: root.leagueTitle()
+                }
+
+                delegate: Loader {
+                    id: rowLoader
+
+                    width: tableList.contentColumnWidth
+                    height: item ? item.height : 0
+                    sourceComponent: modelData.isGroupHeader ? groupHeaderComponent : tableRowComponent
+
+                    readonly property var rowData: modelData
+
+                    onLoaded: item.rowData = rowData
+                    onRowDataChanged: {
+                        if (item)
+                            item.rowData = rowData;
+                    }
+                }
+            }
+
+            EmptyState {
+                anchors.fill: parent
+                visible: root.rowCount === 0
+                text: root.tableLoading ? i18nc("@info:status", "Updating table") : root.tableErrorMessage.length > 0 ? root.tableErrorMessage : i18nc("@info:placeholder", "No table data")
+            }
+        }
     }
 
     component EmptyState: Item {

@@ -38,11 +38,16 @@ Item {
     property int activeSavedLeagueIndex: -1
     property string activeLeagueLabel: ""
     property string activeCountryLabel: ""
+    property string activeClubBadge: ""
+    property string tableLeagueLabel: ""
+    property bool followTeamMode: false
+    property var teamTableOptions: []
+    property string selectedTableSlug: ""
+    property bool tableLoading: false
     property int sportCount: 0
     property int tableCount: 0
     property int recentResultsCount: 0
     property string widgetTabs: "all"
-    property string nowText: Qt.formatDateTime(new Date(), "dd.MM.yyyy hh:mm:ss")
     property int activeTab: 0
     property int selectedLiveIndex: 0
     property int selectedScoreIndex: 0
@@ -56,6 +61,7 @@ Item {
     signal refreshRequested()
     signal configureRequested()
     signal leagueSelected(int index)
+    signal teamTableSelected(string slug)
 
     function isFavoriteTeam(teamName) {
         const favorite = root.favoriteTeam.toLowerCase();
@@ -192,18 +198,24 @@ Item {
         return meta.length > 0 ? league + " - " + meta : league;
     }
 
+    function selectedTableLabel() {
+        const selected = String(root.selectedTableSlug || "").trim();
+        const options = Array.isArray(root.teamTableOptions) ? root.teamTableOptions : [];
+        for (let index = 0; index < options.length; index += 1) {
+            const option = options[index] || {};
+            if (String(option.slug || "").trim() === selected)
+                return String(option.label || "").trim();
+        }
+
+        return root.tableLeagueLabel.length > 0 ? root.tableLeagueLabel : root.activeCountryLabel;
+    }
+
     onWidgetTabsChanged: activateTab(activeTab)
+    onFollowTeamModeChanged: activateTab(activeTab)
     Layout.minimumWidth: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 30 : Kirigami.Units.gridUnit * 18
     Layout.minimumHeight: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 30 : Kirigami.Units.gridUnit * 14
     Layout.preferredWidth: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 40 : Kirigami.Units.gridUnit * 22
     Layout.preferredHeight: root.hasSavedLeagues ? Kirigami.Units.gridUnit * 43 : Kirigami.Units.gridUnit * 16
-
-    Timer {
-        interval: 1000
-        repeat: true
-        running: true
-        onTriggered: root.nowText = Qt.formatDateTime(new Date(), "dd.MM.yyyy hh:mm:ss")
-    }
 
     Item {
         anchors.fill: parent
@@ -264,33 +276,68 @@ Item {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                Kirigami.Icon {
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
-                    Layout.preferredHeight: Layout.preferredWidth
-                    source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(root.sport))
-                    isMask: true
-                    color: Kirigami.Theme.textColor
-                }
+                Item {
+                    readonly property int headerIconSize: Kirigami.Units.iconSizes.medium
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
+                    Layout.preferredWidth: headerIconSize
+                    Layout.preferredHeight: headerIconSize
+                    Layout.alignment: Qt.AlignVCenter
 
-                    PlasmaComponents.Label {
-                        Layout.fillWidth: true
-                        text: root.activeLeagueLabel.length > 0 ? root.activeLeagueLabel : SportVisuals.label(root.sport)
-                        color: Kirigami.Theme.textColor
-                        elide: Text.ElideRight
-                        font.bold: true
+                    Image {
+                        anchors.fill: parent
+                        source: root.followTeamMode ? root.activeClubBadge : ""
+                        visible: source.toString().length > 0
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
                     }
 
-                    PlasmaComponents.Label {
-                        Layout.fillWidth: true
-                        text: [SportVisuals.label(root.sport), root.activeCountryLabel].filter(part => String(part || "").length > 0).join(" · ")
-                        color: Kirigami.Theme.disabledTextColor
-                        elide: Text.ElideRight
-                        visible: text.length > 0
-                        font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                    Kirigami.Icon {
+                        anchors.fill: parent
+                        source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(root.sport))
+                        visible: !root.followTeamMode || root.activeClubBadge.length === 0
+                        isMask: true
+                        color: Kirigami.Theme.textColor
+                    }
+                }
+
+                PlasmaComponents.Label {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    text: root.activeLeagueLabel.length > 0 ? root.activeLeagueLabel : SportVisuals.label(root.sport)
+                    color: Kirigami.Theme.textColor
+                    elide: Text.ElideRight
+                    verticalAlignment: Text.AlignVCenter
+                    font.bold: true
+                }
+
+                Button {
+                    id: headerTableChooser
+
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 12
+                    visible: root.followTeamMode && Array.isArray(root.teamTableOptions) && root.teamTableOptions.length > 1
+                    text: root.selectedTableLabel()
+                    icon.name: "go-down"
+                    onClicked: headerTableMenu.open()
+
+                    Menu {
+                        id: headerTableMenu
+
+                        y: headerTableChooser.height
+
+                        Repeater {
+                            model: root.teamTableOptions
+
+                            delegate: MenuItem {
+                                required property var modelData
+
+                                readonly property string optionSlug: String(modelData && modelData.slug || "").trim()
+
+                                text: String(modelData && modelData.label || "")
+                                checkable: true
+                                checked: optionSlug === String(root.selectedTableSlug || "").trim()
+                                onTriggered: root.teamTableSelected(optionSlug)
+                            }
+                        }
                     }
                 }
 
@@ -325,12 +372,6 @@ Item {
                         }
                     }
                 }
-            }
-
-            PlasmaComponents.Label {
-                text: root.nowText
-                color: Kirigami.Theme.textColor
-                font.bold: true
             }
 
             ToolButton {
@@ -460,10 +501,15 @@ Item {
                 tableRows: root.tableRows
                 tableCount: root.tableCount
                 tableErrorMessage: root.tableErrorMessage
+                tableLoading: root.tableLoading
                 league: root.league
-                leagueLabel: root.activeLeagueLabel
+                leagueLabel: root.tableLeagueLabel.length > 0 ? root.tableLeagueLabel : root.activeLeagueLabel
                 sport: root.sport
                 favoriteTeam: root.favoriteTeam
+                followTeamMode: root.followTeamMode
+                tableOptions: root.teamTableOptions
+                selectedTableSlug: root.selectedTableSlug
+                onTableSelected: (slug) => root.teamTableSelected(slug)
             }
 
         }

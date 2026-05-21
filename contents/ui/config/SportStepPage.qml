@@ -16,6 +16,7 @@ ColumnLayout {
     property string filterText: ""
     property string filterPlaceholder: ""
     readonly property int cardMinimumWidth: Kirigami.Units.gridUnit * 10
+    property alias headerContent: headerExtra.data
     default property alias cards: cardGrid.data
 
     signal filterEdited(string text)
@@ -57,6 +58,14 @@ ColumnLayout {
             source: "search"
             color: Kirigami.Theme.disabledTextColor
         }
+    }
+
+    ColumnLayout {
+        id: headerExtra
+
+        Layout.fillWidth: true
+        spacing: Kirigami.Units.smallSpacing
+        visible: children.length > 0
     }
 
     ScrollView {

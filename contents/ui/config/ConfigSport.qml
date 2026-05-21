@@ -28,6 +28,7 @@ KCM.SimpleKCM {
     property int cfg_activeSavedLeagueIndex: Plasmoid.configuration.activeSavedLeagueIndex
 
     readonly property string currentProvider: "sportscore"
+    property string currentFollowMode: "league"
     property int pageIndex: 0
     property var wizardInitialEntry: ({})
     property int wizardEditingIndex: -1
@@ -117,6 +118,15 @@ KCM.SimpleKCM {
         return root.cfg_favoriteTeam && root.cfg_favoriteTeam.length > 0 ? root.cfg_favoriteTeam : i18nc("@label", "No favorite team");
     }
 
+    function normalizedFollowMode(value, favoriteTeam) {
+        const favorite = String(favoriteTeam || "").trim();
+        return String(value || "").trim() === "team" && favorite.length > 0 ? "team" : "league";
+    }
+
+    function followModeLabel(entry) {
+        return root.normalizedFollowMode(entry && entry.followMode, entry && entry.favoriteTeam) === "team" ? i18nc("@label", "Team · All competitions") : i18nc("@label", "League");
+    }
+
     function displayLeagueLabel(entry) {
         entry = entry || {};
         return String(entry.customLeagueLabel || entry.leagueLabel || ProviderCatalog.leagueLabel(entry.league) || entry.league || "").trim();
@@ -130,6 +140,16 @@ KCM.SimpleKCM {
     function displayFavoriteTeam(entry) {
         entry = entry || {};
         return String(entry.customFavoriteTeamLabel || entry.favoriteTeam || "").trim();
+    }
+
+    function displaySavedTitle(entry) {
+        entry = entry || {};
+        if (root.normalizedFollowMode(entry.followMode, entry.favoriteTeam) === "team") {
+            const favorite = root.displayFavoriteTeam(entry);
+            return favorite.length > 0 ? favorite : root.displayLeagueLabel(entry);
+        }
+
+        return root.displayLeagueLabel(entry);
     }
 
     function filtered(options, filterText) {
@@ -148,6 +168,7 @@ KCM.SimpleKCM {
         const leagues = ProviderCatalog.leagueOptions(root.currentProvider, value, root.cfg_country);
         root.cfg_league = leagues.length > 0 ? leagues[0].value : "";
         root.cfg_favoriteTeam = "";
+        root.currentFollowMode = "league";
     }
 
     function selectCountry(value) {
@@ -155,11 +176,13 @@ KCM.SimpleKCM {
         const leagues = root.leagueOptions();
         root.cfg_league = leagues.length > 0 ? leagues[0].value : "";
         root.cfg_favoriteTeam = "";
+        root.currentFollowMode = "league";
     }
 
     function selectLeague(value) {
         root.cfg_league = value;
         root.cfg_favoriteTeam = "";
+        root.currentFollowMode = "league";
     }
 
     function savedLeagues() {
@@ -183,7 +206,8 @@ KCM.SimpleKCM {
             countryIcon: root.countryIcon(root.cfg_country),
             league: root.cfg_league || "",
             leagueLabel: root.leagueLabel(),
-            favoriteTeam: root.cfg_favoriteTeam || ""
+            favoriteTeam: root.cfg_favoriteTeam || "",
+            followMode: root.normalizedFollowMode(root.currentFollowMode, root.cfg_favoriteTeam)
         };
     }
 
@@ -191,7 +215,8 @@ KCM.SimpleKCM {
         return String(left.sport || "") === String(right.sport || "")
             && String(left.country || "") === String(right.country || "")
             && String(left.league || "") === String(right.league || "")
-            && String(left.favoriteTeam || "") === String(right.favoriteTeam || "");
+            && String(left.favoriteTeam || "") === String(right.favoriteTeam || "")
+            && root.normalizedFollowMode(left.followMode, left.favoriteTeam) === root.normalizedFollowMode(right.followMode, right.favoriteTeam);
     }
 
     function saveOrReplaceLeague(entry, replaceIndex) {
@@ -230,6 +255,7 @@ KCM.SimpleKCM {
         root.cfg_country = entry.country || ProviderCatalog.defaultCountry(root.currentProvider, root.cfg_selectedSports);
         root.cfg_league = entry.league || "";
         root.cfg_favoriteTeam = entry.favoriteTeam || "";
+        root.currentFollowMode = root.normalizedFollowMode(entry.followMode, entry.favoriteTeam);
         if (index !== undefined && index >= 0)
             root.cfg_activeSavedLeagueIndex = index;
     }
@@ -247,6 +273,7 @@ KCM.SimpleKCM {
             root.cfg_country = "";
             root.cfg_league = "";
             root.cfg_favoriteTeam = "";
+            root.currentFollowMode = "league";
             return;
         }
 
@@ -271,7 +298,8 @@ KCM.SimpleKCM {
             sport: "",
             country: "",
             league: "",
-            favoriteTeam: ""
+            favoriteTeam: "",
+            followMode: "league"
         };
         root.wizardEditingIndex = -1;
         root.pageIndex = 1;
@@ -312,6 +340,12 @@ KCM.SimpleKCM {
             root.cfg_league = "";
         }
         root.cfg_defaultSelectionMigrated = true;
+        const saved = root.savedLeagues();
+        if (saved.length > 0) {
+            const index = Math.max(0, Math.min(root.cfg_activeSavedLeagueIndex, saved.length - 1));
+            const active = saved[index] || {};
+            root.currentFollowMode = root.normalizedFollowMode(active.followMode, active.favoriteTeam);
+        }
     }
 
     Component {

@@ -21,6 +21,7 @@ Item {
     property string cfg_country: ""
     property string cfg_league: ""
     property string cfg_favoriteTeam: ""
+    property string cfg_followMode: "league"
     readonly property int pageCount: 4
     readonly property string currentProvider: settingsRoot ? settingsRoot.currentProvider : "sportscore"
 
@@ -69,6 +70,19 @@ Item {
         return ProviderCatalog.favoriteTeamOptions(root.cfg_league || "");
     }
 
+    function normalizedFollowMode(value, favoriteTeam) {
+        const favorite = String(favoriteTeam || "").trim();
+        return String(value || "").trim() === "team" && favorite.length > 0 ? "team" : "league";
+    }
+
+    function canUseTeamFollowMode() {
+        return root.cfg_favoriteTeam.length > 0;
+    }
+
+    function setFollowMode(value) {
+        root.cfg_followMode = root.normalizedFollowMode(value, root.cfg_favoriteTeam);
+    }
+
     function countryLabel() {
         if (!root.cfg_country || root.cfg_country.length === 0)
             return i18nc("@label", "No country selected");
@@ -114,17 +128,20 @@ Item {
         root.cfg_country = "";
         root.cfg_league = "";
         root.cfg_favoriteTeam = "";
+        root.cfg_followMode = "league";
     }
 
     function selectCountry(value) {
         root.cfg_country = value;
         root.cfg_league = "";
         root.cfg_favoriteTeam = "";
+        root.cfg_followMode = "league";
     }
 
     function selectLeague(value) {
         root.cfg_league = value;
         root.cfg_favoriteTeam = "";
+        root.cfg_followMode = "league";
     }
 
     function currentEntry() {
@@ -135,7 +152,8 @@ Item {
             countryIcon: root.countryIcon(root.cfg_country),
             league: root.cfg_league || "",
             leagueLabel: root.leagueLabel(),
-            favoriteTeam: root.cfg_favoriteTeam || ""
+            favoriteTeam: root.cfg_favoriteTeam || "",
+            followMode: root.normalizedFollowMode(root.cfg_followMode, root.cfg_favoriteTeam)
         };
     }
 
@@ -146,6 +164,7 @@ Item {
             root.cfg_country = entry.country || "";
             root.cfg_league = entry.league || "";
             root.cfg_favoriteTeam = entry.favoriteTeam || "";
+            root.cfg_followMode = root.normalizedFollowMode(entry.followMode, root.cfg_favoriteTeam);
             return;
         }
 
@@ -155,6 +174,7 @@ Item {
         root.cfg_country = root.settingsRoot.cfg_country || "";
         root.cfg_league = root.settingsRoot.cfg_league || "";
         root.cfg_favoriteTeam = root.settingsRoot.cfg_favoriteTeam || "";
+        root.cfg_followMode = "league";
     }
 
     Component.onCompleted: initializeDraft()

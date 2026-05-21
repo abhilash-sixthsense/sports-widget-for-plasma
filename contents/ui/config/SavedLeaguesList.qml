@@ -35,14 +35,14 @@ ColumnLayout {
         const saved = root.configRoot ? root.configRoot.savedLeagues() : [];
         saved.forEach(entry => {
             const safeEntry = Object.assign({}, entry || {});
-            const parts = [SportVisuals.label(safeEntry.sport), root.configRoot.displayCountryLabel(safeEntry)];
+            const parts = [SportVisuals.label(safeEntry.sport), root.configRoot.displayCountryLabel(safeEntry), root.configRoot.followModeLabel(safeEntry)];
             const favorite = root.configRoot.displayFavoriteTeam(safeEntry);
-            if (favorite.length > 0)
+            if (favorite.length > 0 && root.configRoot.normalizedFollowMode(safeEntry.followMode, safeEntry.favoriteTeam) !== "team")
                 parts.push(i18nc("@label", "Favorite: %1", favorite));
 
             savedLeagueModel.append({
                 entryJson: JSON.stringify(safeEntry),
-                leagueLabel: root.configRoot.displayLeagueLabel(safeEntry),
+                leagueLabel: root.configRoot.displaySavedTitle(safeEntry),
                 metaLabel: parts.filter(part => String(part || "").length > 0).join(" · "),
                 countryIcon: safeEntry.countryIcon || root.configRoot.countryIconForEntry(safeEntry)
             });
@@ -113,7 +113,7 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         Kirigami.Heading {
-            text: i18nc("@title:group", "Saved Leagues")
+            text: i18nc("@title:group", "Saved Sports")
             level: 4
         }
 
@@ -134,7 +134,7 @@ ColumnLayout {
     Label {
         Layout.fillWidth: true
         visible: root.configRoot && root.configRoot.savedLeagues().length === 0
-        text: i18nc("@info", "Save leagues here to switch quickly between them with their favorite team.")
+        text: i18nc("@info", "Save leagues or teams here to switch quickly between sports views.")
         color: Kirigami.Theme.disabledTextColor
         wrapMode: Text.WordWrap
     }

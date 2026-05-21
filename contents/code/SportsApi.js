@@ -193,6 +193,56 @@ function fetchLeagueTable(options, onSuccess, onError) {
     }), onSuccess, onError);
 }
 
+function fetchTeamCompetitions(options, onSuccess, onError) {
+    const favoriteTeam = stringValue(options && options.favoriteTeam);
+    if (!isFootballSelection(options) || favoriteTeam.length === 0) {
+        onSuccess([]);
+        return;
+    }
+
+    let pending = 0;
+    let rows = [];
+    let errors = [];
+
+    function remember(error) {
+        if (stringValue(error).length > 0)
+            errors.push(error);
+    }
+
+    function finish() {
+        pending -= 1;
+        if (pending > 0)
+            return;
+
+        rows = mergeCompetitionOptions(rows);
+        if (rows.length > 0 || errors.length === 0) {
+            onSuccess(rows);
+        } else {
+            onError(errors.join(", "));
+        }
+    }
+
+    pending += 1;
+    fetchTheSportsDBTeamCompetitions(options, competitions => {
+        rows = rows.concat(competitions);
+        finish();
+    }, message => {
+        remember(message);
+        finish();
+    });
+
+    if (canFetchSportScoreTeamFixtures(options)) {
+        pending += 1;
+        fetchSportScoreTeamCompetitions(options, competitions => {
+            rows = rows.concat(competitions);
+            finish();
+        }, message => {
+            remember(message);
+            finish();
+        });
+    }
+}
+
 function fetchScoresFixtures(options, onSuccess, onError) {
     const provider = "sportscore";
 
@@ -213,7 +263,7 @@ function fetchScoresFixtures(options, onSuccess, onError) {
 
     if (canFetchSportScoreTeamFixtures(options)) {
         fetchSportScoreTeamFixtures(options, fixtures => {
-            if (fixtures.length > 0) {
+            if (fixtures.length > 0 && hasSchedulableFixture(fixtures)) {
                 onSuccess(fixtures);
                 return;
             }
@@ -903,6 +953,155 @@ function fetchSportScoreTeamRecentResults(options, onSuccess, onError) {
     }
 
     launchNext();
+}
+
+function fetchSportScoreTeamCompetitions(options, onSuccess, onError) {
+    const rows = (Array.isArray(options.tableRows) ? options.tableRows : []).map(row => {
+        const copy = Object.assign({}, row);
+        copy.teamSlug = sportScoreTeamSlug(row);
+        return copy;
+    }).filter(row => stringValue(row.teamSlug).length > 0 && stringValue(row.team).length > 0).slice(0, 4);
+
+    if (rows.length === 0) {
+        onSuccess([]);
+        return;
+    }
+
+    let pending = rows.length;
+    let competitions = [];
+    let errors = [];
+    const baseUrl = stripTrailingSlash(ProviderCatalog.defaultBaseUrl("sportscore"));
+
+    rows.forEach(row => {
+        const url = `${baseUrl}/team/?sport=football&slug=${encodeURIComponent(row.teamSlug)}&limit=50&src=sports-widget-for-plasma`;
+        requestJson(url, payload => {
+            competitions = competitions.concat(teamCompetitionOptionsFromMatches(arrayValue(payload && payload.matches), stringValue(payload && payload.team && payload.team.logo)));
+            pending -= 1;
+            if (pending === 0)
+                finishSportScoreTeamCompetitions(competitions, errors, onSuccess, onError);
+        }, message => {
+            if (!isHttpNotFound(message))
+                errors.push(`${row.team}: ${message}`);
+
+            pending -= 1;
+            if (pending === 0)
+                finishSportScoreTeamCompetitions(competitions, errors, onSuccess, onError);
+        });
+    });
+}
+
+function finishSportScoreTeamCompetitions(competitions, errors, onSuccess, onError) {
+    const rows = mergeCompetitionOptions(competitions);
+    if (rows.length > 0 || errors.length === 0) {
+        onSuccess(rows);
+    } else {
+        onError(errors.join(", "));
+    }
+}
+
+function fetchTheSportsDBTeamCompetitions(options, onSuccess, onError) {
+    const favoriteTeam = stringValue(options && options.favoriteTeam);
+    if (favoriteTeam.length === 0) {
+        onSuccess([]);
+        return;
+    }
+
+    const url = `${THESPORTSDB_API_BASE_URL}/searchteams.php?t=${encodeURIComponent(favoriteTeam)}`;
+    requestJson(url, payload => {
+        const team = selectTheSportsDBTeam(payload, options);
+        onSuccess(teamCompetitionOptionsFromTheSportsDBTeam(team));
+    }, onError);
+}
+
+function selectTheSportsDBTeam(payload, options) {
+    const teams = arrayValue(payload && payload.teams);
+    const favoriteTeam = normalizedText(options && options.favoriteTeam);
+    const selectedCountry = normalizedText(ProviderCatalog.countryLabel(options && options.country));
+    let best = {};
+    let bestScore = 0;
+
+    teams.forEach(team => {
+        const sport = normalizedText(team && team.strSport);
+        if (sport.length > 0 && sport !== "soccer" && sport !== "football")
+            return;
+
+        const name = normalizedText(team && team.strTeam);
+        if (name.length === 0)
+            return;
+
+        let score = similarityScore(name, favoriteTeam);
+        if (name === favoriteTeam)
+            score += 5;
+
+        const country = normalizedText(team && team.strCountry);
+        if (selectedCountry.length > 0 && selectedCountry !== "international tournaments") {
+            if (country === selectedCountry)
+                score += 2;
+            else if (country.length > 0)
+                score -= 1;
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            best = team || {};
+        }
+    });
+
+    return bestScore > 0 ? best : {};
+}
+
+function teamCompetitionOptionsFromTheSportsDBTeam(team) {
+    let rows = [];
+    if (!team)
+        return rows;
+
+    const badge = stringValue(team && (team.strBadge || team.strLogo || team.strTeamBadge));
+    for (let index = 1; index <= 7; index += 1) {
+        const key = index === 1 ? "strLeague" : `strLeague${index}`;
+        const label = stringValue(team && team[key]);
+        if (label.length > 0)
+            rows.push(competitionOption(label, label, badge));
+    }
+
+    return mergeCompetitionOptions(rows);
+}
+
+function teamCompetitionOptionsFromMatches(matches, teamBadge) {
+    return mergeCompetitionOptions(arrayValue(matches).map(match => {
+        const label = stringValue(match && (match.competition || match.league));
+        return competitionOption(label, label, teamBadge);
+    }));
+}
+
+function competitionOption(label, slug, teamBadge) {
+    const normalizedSlug = ProviderCatalog.sportScoreSlug(slug || label);
+    if (normalizedSlug.length === 0)
+        return {};
+
+    return {
+        label: stringValue(label) || ProviderCatalog.leagueLabel(normalizedSlug) || normalizedSlug,
+        slug: normalizedSlug,
+        teamBadge: stringValue(teamBadge)
+    };
+}
+
+function mergeCompetitionOptions(competitions) {
+    let seen = {};
+    let rows = [];
+    arrayValue(competitions).forEach(option => {
+        const slug = ProviderCatalog.sportScoreSlug(option && option.slug || option && option.label);
+        if (slug.length === 0 || seen[slug])
+            return;
+
+        seen[slug] = true;
+        rows.push({
+            label: stringValue(option && option.label) || ProviderCatalog.leagueLabel(slug) || slug,
+            slug,
+            teamBadge: stringValue(option && option.teamBadge)
+        });
+    });
+
+    return rows;
 }
 
 function finishTeamFixtures(matches, errors, options, onSuccess, onError) {
@@ -3178,9 +3377,35 @@ function isFinishedMatch(match) {
         status.indexOf("not started") < 0;
 }
 
+function hasSchedulableFixture(matches) {
+    return (Array.isArray(matches) ? matches : []).some(match => isSchedulableFixture(match));
+}
+
+function isSchedulableFixture(match) {
+    if (!match || isFinishedMatch(match))
+        return false;
+
+    if (isLiveMatch(match))
+        return true;
+
+    const status = normalizedText(match.status);
+    const timestamp = numberValue(match.timestamp);
+    const now = Date.now();
+    if (status.indexOf("upcoming") >= 0 || status.indexOf("scheduled") >= 0 || status.indexOf("not started") >= 0 || status.indexOf("postponed") >= 0)
+        return timestamp === 0 || timestamp >= now - 3 * 60 * 60 * 1000;
+
+    if (timestamp > 0)
+        return timestamp >= now - 3 * 60 * 60 * 1000;
+
+    return stringValue(match.homeScore).length === 0 && stringValue(match.awayScore).length === 0;
+}
+
 function filterMatchesForSelection(matches, options) {
     const sport = normalizeSports(options.sports)[0] || "football";
     if (sport !== "football" && sport !== "soccer")
+        return matches;
+
+    if (stringValue(options && options.followMode).trim().toLowerCase() === "team")
         return matches;
 
     const league = ProviderCatalog.sportScoreSlug(options.league);

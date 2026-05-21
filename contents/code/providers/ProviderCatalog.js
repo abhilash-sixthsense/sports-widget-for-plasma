@@ -326,16 +326,31 @@ function sportScoreSlug(code) {
         "BSA": "brazilian-serie-a",
         "CL": "uefa-champions-league",
         "DED": "netherlands-eredivisie",
+        "CARABAO CUP": "english-football-league-cup",
         "EC": "uefa-european-championship",
+        "EFL CUP": "english-football-league-cup",
         "ELC": "english-football-league-championship",
+        "ENGLISH PREMIER LEAGUE": "english-premier-league",
+        "ENGLISH LEAGUE CUP": "english-football-league-cup",
         "FL1": "french-ligue-1",
+        "FRENCH LIGUE 1": "french-ligue-1",
+        "ITALIAN SERIE A": "italian-serie-a",
+        "LA LIGA": "spanish-la-liga",
         "PD": "spanish-la-liga",
+        "PREMIER LEAGUE": "english-premier-league",
         "PL": "english-premier-league",
         "PPL": "portuguese-primera-liga",
         "SA": "italian-serie-a",
+        "SERIE A": "italian-serie-a",
+        "SPANISH LA LIGA": "spanish-la-liga",
+        "UEFA CONFERENCE LEAGUE": "uefa-europa-conference-league",
+        "UEFA EUROPA CONFERENCE LEAGUE": "uefa-europa-conference-league",
         "WC": "fifa-world-cup"
     };
-    return slugs[normalized] || raw.toLowerCase();
+    return slugs[normalized] || raw.toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
 }
 
 function sportScoreSport(sport) {

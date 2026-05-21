@@ -56,6 +56,7 @@ Item {
 
         delegate: ScoreDelegate {
             width: resultsList.contentColumnWidth
+            height: String(model.stadium || "").length > 0 ? Kirigami.Units.gridUnit * 4.2 : Kirigami.Units.gridUnit * 3.35
             sport: model.sport
             league: model.league
             homeTeam: model.homeTeam
@@ -65,7 +66,7 @@ Item {
             status: model.status
             minute: model.minute
             startTime: model.startTime
-            matchday: model.matchday || ""
+            matchday: ""
             stadium: model.stadium || ""
             homeBadge: model.homeBadge
             awayBadge: model.awayBadge
