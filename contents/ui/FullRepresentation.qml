@@ -17,7 +17,6 @@ Item {
     property var liveModel: null
     property var tableModel: null
     property var tableRows: []
-    property var fixturesModel: null
     property var recentResultsModel: null
     property bool loading: false
     property bool liveLoading: false
@@ -41,7 +40,6 @@ Item {
     property string activeCountryLabel: ""
     property int sportCount: 0
     property int tableCount: 0
-    property int fixtureCount: 0
     property int recentResultsCount: 0
     property string widgetTabs: "all"
     property string nowText: Qt.formatDateTime(new Date(), "dd.MM.yyyy hh:mm:ss")
@@ -80,9 +78,6 @@ Item {
         if (root.widgetTabs === "liveTables")
             return tab === 3;
 
-        if (root.widgetTabs === "liveFixtures")
-            return tab === 4;
-
         return false;
     }
 
@@ -102,6 +97,15 @@ Item {
         const index = Math.max(0, Math.min(root.currentHeroIndex(), count - 1));
         const match = model.get(index);
         return match && match[field] !== undefined ? match[field] : fallback;
+    }
+
+    function selectedMatchBool(field, fallback) {
+        const value = root.selectedMatchValue(field, fallback);
+        if (typeof value === "boolean")
+            return value;
+
+        const text = String(value || "").trim().toLowerCase();
+        return text === "true" || text === "1" || text === "yes";
     }
 
     function modelCount(model) {
@@ -358,6 +362,7 @@ Item {
             stadium: root.selectedMatchValue("stadium", "")
             homeBadge: root.selectedMatchValue("homeBadge", "")
             awayBadge: root.selectedMatchValue("awayBadge", "")
+            showScore: root.selectedMatchBool("showScore", root.activeTab === 0)
             loading: root.heroLoading()
         }
 
@@ -402,13 +407,6 @@ Item {
                     onClicked: root.activateTab(3)
                 }
 
-                WeatherStyleTab {
-                    label: i18n("Scores & Fixtures")
-                    active: root.activeTab === 4
-                    visible: root.tabVisible(4)
-                    onClicked: root.activateTab(4)
-                }
-
             }
 
         }
@@ -439,6 +437,7 @@ Item {
                 scheduleModel: root.scoreModel
                 favoriteTeam: root.favoriteTeam
                 loading: root.loading || root.schedulesLoading
+                emptyText: root.favoriteTeam.length > 0 ? i18nc("@info:placeholder", "No scheduled matches for %1", root.favoriteTeam) : i18nc("@info:placeholder", "No scheduled matches")
                 selectedIndex: root.selectedScoreIndex
                 onMatchSelected: (index) => {
                     root.selectedScoreIndex = index;
@@ -449,6 +448,7 @@ Item {
                 resultsModel: root.recentResultsModel
                 favoriteTeam: root.favoriteTeam
                 loading: root.recentResultsLoading
+                emptyText: root.favoriteTeam.length > 0 ? i18nc("@info:placeholder", "No recent results for %1", root.favoriteTeam) : i18nc("@info:placeholder", "No recent results")
                 selectedIndex: root.selectedRecentResultIndex
                 onMatchSelected: (index) => {
                     root.selectedRecentResultIndex = index;
@@ -463,11 +463,6 @@ Item {
                 league: root.league
                 leagueLabel: root.activeLeagueLabel
                 sport: root.sport
-                favoriteTeam: root.favoriteTeam
-            }
-
-            FixturesTab {
-                fixturesModel: root.fixturesModel
                 favoriteTeam: root.favoriteTeam
             }
 
@@ -497,9 +492,13 @@ Item {
         property string stadium: ""
         property string homeBadge: ""
         property string awayBadge: ""
+        property bool showScore: true
         property bool loading: false
 
         function scoreText() {
+            if (!showScore)
+                return "";
+
             const home = homeScore.length > 0 ? homeScore : "0";
             const away = awayScore.length > 0 ? awayScore : "0";
             return home + " - " + away;
@@ -552,6 +551,7 @@ Item {
                 PlasmaComponents.Label {
                     Layout.fillWidth: true
                     text: hero.scoreText()
+                    visible: text.length > 0
                     color: Kirigami.Theme.textColor
                     horizontalAlignment: Text.AlignHCenter
                     font.bold: true

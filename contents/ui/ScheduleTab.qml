@@ -75,6 +75,7 @@ Item {
             awayBadge: model.awayBadge
             poster: model.poster
             popular: model.popular
+            showScore: model.showScore !== false
             favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
             selected: index === root.selectedIndex
             onClicked: root.matchSelected(index)

@@ -22,7 +22,6 @@ PlasmoidItem {
     property int liveCount: liveMatchesModel.count
     property int scheduleCount: scoresModel.count
     property int tableCount: tableModel.count
-    property int fixtureCount: fixturesModel.count
     property int recentResultsCount: recentResultsListModel.count
     property bool tableRequestCompleted: false
     property bool currentManualRefresh: false
@@ -49,6 +48,16 @@ PlasmoidItem {
     property string panelHeroText: liveMatchesModel.count > 0 ? panelTeamsScoreText(liveMatchesModel.get(0)) : scoresModel.count > 0 ? panelScheduleText(scoresModel.get(0)) : root.hasSportSelection() ? i18nc("@info:status", "No scheduled matches") : i18nc("@action:button", "Add a sport")
     property string panelHeroLiveText: liveMatchesModel.count > 0 ? panelLiveText(liveMatchesModel.get(0)) : ""
     property bool panelHeroLive: liveMatchesModel.count > 0
+    property var panelHeroMatch: liveMatchesModel.count > 0 ? liveMatchesModel.get(0) : scoresModel.count > 0 ? scoresModel.get(0) : ({})
+    property bool panelHeroShowScore: matchBooleanField(panelHeroMatch, "showScore", liveMatchesModel.count > 0)
+    property string panelHeroStatusText: matchStatusText(panelHeroMatch)
+    property string panelHeroHomeTeam: matchField(panelHeroMatch, "homeTeam")
+    property string panelHeroAwayTeam: matchField(panelHeroMatch, "awayTeam")
+    property string panelHeroHomeScore: matchField(panelHeroMatch, "homeScore")
+    property string panelHeroAwayScore: matchField(panelHeroMatch, "awayScore")
+    property string panelHeroHomeBadge: matchField(panelHeroMatch, "homeBadge")
+    property string panelHeroAwayBadge: matchField(panelHeroMatch, "awayBadge")
+    property string panelHeroStadium: matchField(panelHeroMatch, "stadium")
     property string selectedSport: String(activeLeagueEntry.sport || "").trim()
     property string selectedLeagueLabel: displayLeagueLabel(activeLeagueEntry)
     property string selectedCountryLabel: displayCountryLabel(activeLeagueEntry)
@@ -58,9 +67,39 @@ PlasmoidItem {
     property var tableRows: []
     property var latestScheduleMatches: []
     property string pendingScheduleMessage: ""
+    readonly property string panelAreaMode: normalizedPanelAreaMode()
+    readonly property int panelAreaSize: Math.max(20, Number(Plasmoid.configuration.panelAreaSize || 240))
+    readonly property bool panelAreaFill: panelAreaMode === "fill"
+    readonly property int compactPanelWidth: panelAreaMode === "manual" ? panelAreaSize : compactRepresentation ? Math.ceil(compactRepresentation.implicitWidth) : Kirigami.Units.gridUnit * 9
+
+    function normalizedPanelAreaMode() {
+        const mode = String(Plasmoid.configuration.panelAreaMode || "auto").trim();
+        if (mode === "fill" || mode === "manual")
+            return mode;
+
+        return "auto";
+    }
 
     function hasSportSelection() {
         return root.savedLeagueCount > 0 && root.selectedSport.length > 0 && root.selectedLeague.length > 0;
+    }
+
+    function matchField(match, field) {
+        if (!match || match[field] === undefined || match[field] === null)
+            return "";
+
+        return String(match[field]).trim();
+    }
+
+    function matchBooleanField(match, field, fallback) {
+        if (!match || match[field] === undefined || match[field] === null)
+            return Boolean(fallback);
+
+        if (typeof match[field] === "boolean")
+            return match[field];
+
+        const value = String(match[field]).trim().toLowerCase();
+        return value === "true" || value === "1" || value === "yes";
     }
 
     function savedLeagues() {
@@ -105,6 +144,9 @@ PlasmoidItem {
     }
 
     function scoreTextForPanel(match) {
+        if (!matchHasDisplayScore(match))
+            return "";
+
         const home = String(match && match.homeScore !== undefined ? match.homeScore : "").trim();
         const away = String(match && match.awayScore !== undefined ? match.awayScore : "").trim();
         return (home.length > 0 ? home : "0") + " - " + (away.length > 0 ? away : "0");
@@ -123,7 +165,7 @@ PlasmoidItem {
         const home = String(match.homeTeam || "").trim();
         const away = String(match.awayTeam || "").trim();
         const score = scoreTextForPanel(match);
-        return home.length > 0 && away.length > 0 ? home + " " + score + " " + away : home + away;
+        return home.length > 0 && away.length > 0 && score.length > 0 ? home + " " + score + " " + away : home.length > 0 && away.length > 0 ? home + " vs " + away : home + away;
     }
 
     function panelLiveText(match) {
@@ -135,6 +177,50 @@ PlasmoidItem {
         const teams = panelTeamsScoreText(match);
         const status = String(match && (match.startTime || match.status) || "").trim();
         return status.length > 0 ? teams + " · " + status : teams;
+    }
+
+    function matchStatusText(match) {
+        match = match || {};
+        const minute = liveMinuteText(match.minute);
+        if (minute.length > 0)
+            return minute;
+
+        const status = String(match.status || "").trim();
+        if (SportsApi.isLiveMatch(match))
+            return status.length > 0 ? status : i18nc("@info:live match status", "Live");
+
+        return String(match.startTime || status || "").trim();
+    }
+
+    function matchHasDisplayScore(match) {
+        match = match || {};
+        if (SportsApi.isLiveMatch(match))
+            return true;
+
+        const status = String(match.status || "").trim().toLowerCase();
+        if (status.indexOf("upcoming") >= 0 || status.indexOf("scheduled") >= 0 || status.indexOf("not started") >= 0 || status.indexOf("postponed") >= 0 || status.indexOf("cancel") >= 0)
+            return false;
+
+        const timestamp = Number(match.timestamp || 0);
+        if (timestamp > Date.now())
+            return false;
+
+        const home = String(match.homeScore !== undefined ? match.homeScore : "").trim();
+        const away = String(match.awayScore !== undefined ? match.awayScore : "").trim();
+        if (home.length === 0 && away.length === 0)
+            return false;
+
+        return SportsApi.isFinishedMatch(match);
+    }
+
+    function matchForModel(match) {
+        const copy = Object.assign({}, match || {});
+        copy.showScore = matchHasDisplayScore(copy);
+        return copy;
+    }
+
+    function emptySchedulesText() {
+        return root.favoriteTeam.length > 0 ? i18nc("@info:status", "No scheduled matches for %1.", root.favoriteTeam) : i18nc("@info:status", "No scheduled matches for the selected league.");
     }
 
     function setActiveSavedLeagueIndex(index) {
@@ -192,7 +278,6 @@ PlasmoidItem {
             liveMatchesModel.clear();
             scoresModel.clear();
             tableModel.clear();
-            fixturesModel.clear();
             recentResultsListModel.clear();
             root.tableRows = [];
             root.latestScheduleMatches = [];
@@ -317,7 +402,6 @@ PlasmoidItem {
                 deferEmptySchedulesMessage("");
             }
 
-            applyFixtures(fixtures);
             finishRefresh(manual, "", token);
         }, (message) => {
             if (!root.isCurrentRefresh(token))
@@ -438,7 +522,6 @@ PlasmoidItem {
                 deferEmptySchedulesMessage("");
             }
 
-            applyFixtures(fixtures);
         }, (message) => {
             if (!root.isCurrentRefresh(options.refreshToken))
                 return;
@@ -523,7 +606,7 @@ PlasmoidItem {
 
         promoteLiveMatches(root.latestScheduleMatches);
         root.loading = false;
-        if (root.refreshErrors.length > 0 && liveMatchesModel.count === 0 && scoresModel.count === 0 && recentResultsListModel.count === 0 && tableModel.count === 0 && fixturesModel.count === 0) {
+        if (root.refreshErrors.length > 0 && liveMatchesModel.count === 0 && scoresModel.count === 0 && recentResultsListModel.count === 0 && tableModel.count === 0) {
             emptySchedulesTimer.stop();
             root.schedulesLoading = false;
             root.errorMessage = manual ? root.refreshErrors.join(", ") : "";
@@ -544,6 +627,7 @@ PlasmoidItem {
         root.latestScheduleMatches = Array.isArray(matches) ? matches.slice() : [];
         promoteLiveMatches(root.latestScheduleMatches);
         matches = scheduledMatches(root.latestScheduleMatches);
+        matches = filterFavoriteMatches(matches);
         matches = prioritizeFavorite(matches);
         if (Plasmoid.configuration.prioritizePopular) {
             matches = matches.slice().sort((left, right) => {
@@ -552,12 +636,12 @@ PlasmoidItem {
             matches = prioritizeFavorite(matches);
         }
         matches.forEach((match) => {
-            return scoresModel.append(match);
+            return scoresModel.append(matchForModel(match));
         });
         if (matches.length > 0) {
             root.errorMessage = "";
         } else if (!root.schedulesLoading) {
-            root.errorMessage = i18nc("@info:status", "No scheduled matches for the selected league.");
+            root.errorMessage = emptySchedulesText();
         }
 
         root.lastUpdatedText = updateText;
@@ -568,16 +652,17 @@ PlasmoidItem {
         liveMatchesModel.clear();
         matches = prioritizeFavorite(Array.isArray(matches) ? matches : []);
         matches.forEach((match) => {
-            return liveMatchesModel.append(match);
+            return liveMatchesModel.append(matchForModel(match));
         });
         return matches.length;
     }
 
     function applyRecentResults(matches) {
         recentResultsListModel.clear();
-        matches = prioritizeFavorite(Array.isArray(matches) ? matches : []);
+        matches = filterFavoriteMatches(Array.isArray(matches) ? matches : []);
+        matches = prioritizeFavorite(matches);
         matches.forEach((match) => {
-            return recentResultsListModel.append(match);
+            return recentResultsListModel.append(matchForModel(match));
         });
         return matches.length;
     }
@@ -610,7 +695,7 @@ PlasmoidItem {
         if (scoresModel.count > 0)
             return;
 
-        root.pendingScheduleMessage = message && message.length > 0 ? message : i18nc("@info:status", "No scheduled matches for the selected league.");
+        root.pendingScheduleMessage = message && message.length > 0 ? message : emptySchedulesText();
         root.schedulesLoading = true;
         root.errorMessage = "";
         emptySchedulesTimer.restart();
@@ -658,14 +743,6 @@ PlasmoidItem {
         });
     }
 
-    function applyFixtures(matches) {
-        fixturesModel.clear();
-        matches = prioritizeFavorite(matches);
-        matches.forEach((match) => {
-            return fixturesModel.append(match);
-        });
-    }
-
     function prioritizeFavorite(items) {
         if (root.favoriteTeam.length === 0)
             return items;
@@ -673,6 +750,13 @@ PlasmoidItem {
         return items.slice().sort((left, right) => {
             return Number(isFavoriteMatch(right)) - Number(isFavoriteMatch(left));
         });
+    }
+
+    function filterFavoriteMatches(items) {
+        if (root.favoriteTeam.length === 0)
+            return items;
+
+        return items.filter((match) => isFavoriteMatch(match));
     }
 
     function isFavoriteMatch(match) {
@@ -722,6 +806,12 @@ PlasmoidItem {
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground | PlasmaCore.Types.ConfigurableBackground
     Plasmoid.icon: "applications-games"
     Plasmoid.title: i18n("Sports Widget for Plasma")
+    Layout.fillWidth: Plasmoid.formFactor === PlasmaCore.Types.Horizontal && root.panelAreaFill
+    Layout.fillHeight: Plasmoid.formFactor === PlasmaCore.Types.Vertical && root.panelAreaFill
+    Layout.minimumWidth: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? root.panelAreaFill ? 0 : root.compactPanelWidth : -1
+    Layout.preferredWidth: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? root.panelAreaFill ? -1 : root.compactPanelWidth : -1
+    Layout.minimumHeight: Plasmoid.formFactor === PlasmaCore.Types.Vertical && root.panelAreaMode === "manual" ? root.panelAreaSize : -1
+    Layout.preferredHeight: Plasmoid.formFactor === PlasmaCore.Types.Vertical ? root.panelAreaFill ? -1 : root.panelAreaMode === "manual" ? root.panelAreaSize : -1 : -1
     toolTipMainText: Plasmoid.title
     toolTipSubText: !root.hasSportSelection() ? i18nc("@info:tooltip", "Add a sport") : liveCount > 0 ? i18ncp("@info:tooltip", "%1 live match", "%1 live matches", liveCount) : scheduleCount > 0 ? i18ncp("@info:tooltip", "%1 scheduled match", "%1 scheduled matches", scheduleCount) : i18nc("@info:tooltip", "No scheduled matches")
     preferredRepresentation: Plasmoid.formFactor === PlasmaCore.Types.Planar ? fullRepresentation : compactRepresentation
@@ -748,10 +838,6 @@ PlasmoidItem {
 
     ListModel {
         id: tableModel
-    }
-
-    ListModel {
-        id: fixturesModel
     }
 
     ListModel {
@@ -808,7 +894,7 @@ PlasmoidItem {
         onTriggered: {
             root.schedulesLoading = false;
             if (scoresModel.count === 0)
-                root.errorMessage = root.pendingScheduleMessage.length > 0 ? root.pendingScheduleMessage : i18nc("@info:status", "No scheduled matches for the selected league.");
+                root.errorMessage = root.pendingScheduleMessage.length > 0 ? root.pendingScheduleMessage : emptySchedulesText();
 
             root.pendingScheduleMessage = "";
         }
@@ -887,6 +973,23 @@ PlasmoidItem {
         panelText: root.panelHeroText
         liveText: root.panelHeroLiveText
         isLive: root.panelHeroLive
+        homeTeam: root.panelHeroHomeTeam
+        awayTeam: root.panelHeroAwayTeam
+        homeScore: root.panelHeroHomeScore
+        awayScore: root.panelHeroAwayScore
+        showScore: root.panelHeroShowScore
+        statusText: root.panelHeroStatusText
+        stadium: root.panelHeroStadium
+        homeBadge: root.panelHeroHomeBadge
+        awayBadge: root.panelHeroAwayBadge
+        favoriteTeam: root.favoriteTeam
+        panelUseSystemFont: Plasmoid.configuration.panelUseSystemFont
+        panelFontFamily: Plasmoid.configuration.panelFontFamily
+        panelFontSize: Plasmoid.configuration.panelFontSize
+        panelFontBold: Plasmoid.configuration.panelFontBold
+        panelEmblemSize: Plasmoid.configuration.panelEmblemSize
+        panelAreaMode: root.panelAreaMode
+        panelAreaSize: root.panelAreaSize
         sport: root.primarySport
     }
 
@@ -915,10 +1018,8 @@ PlasmoidItem {
         activeCountryLabel: root.selectedCountryLabel
         tableModel: tableModel
         tableRows: root.tableRows
-        fixturesModel: fixturesModel
         league: root.selectedLeague
         tableCount: root.tableCount
-        fixtureCount: root.fixtureCount
         recentResultsCount: root.recentResultsCount
         widgetTabs: Plasmoid.configuration.widgetTabs
         favoriteTeam: root.favoriteTeam

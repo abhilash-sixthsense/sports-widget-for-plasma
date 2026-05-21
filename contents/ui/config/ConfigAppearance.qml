@@ -8,74 +8,73 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kcmutils as KCM
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.plasmoid
+import "tabs" as AppearanceTabs
 
 KCM.SimpleKCM {
     id: root
 
     property string cfg_panelLayoutMode: Plasmoid.configuration.panelLayoutMode
+    property string cfg_panelAreaMode: Plasmoid.configuration.panelAreaMode
+    property int cfg_panelAreaSize: Plasmoid.configuration.panelAreaSize
+    property bool cfg_panelUseSystemFont: Plasmoid.configuration.panelUseSystemFont
+    property string cfg_panelFontFamily: Plasmoid.configuration.panelFontFamily
+    property int cfg_panelFontSize: Plasmoid.configuration.panelFontSize
+    property bool cfg_panelFontBold: Plasmoid.configuration.panelFontBold
+    property int cfg_panelEmblemSize: Plasmoid.configuration.panelEmblemSize
     property string cfg_widgetTabs: Plasmoid.configuration.widgetTabs
+    readonly property bool isVerticalPanel: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
-    function indexFor(model, value) {
-        for (let index = 0; index < model.length; index += 1) {
-            if (model[index].value === value)
-                return index;
+    header: PlasmaComponents.TabBar {
+        id: appearanceTabs
 
+        PlasmaComponents.TabButton {
+            icon.name: "view-list-details"
+            text: i18nc("@title:tab", "Panel")
         }
-        return 0;
+
+        PlasmaComponents.TabButton {
+            icon.name: "plasma-symbolic"
+            text: i18nc("@title:tab", "Widget")
+        }
+
+        PlasmaComponents.TabButton {
+            icon.name: "preferences-desktop-feedback"
+            text: i18nc("@title:tab", "Tooltip")
+        }
+
+        PlasmaComponents.TabButton {
+            icon.name: "preferences-desktop"
+            text: i18nc("@title:tab", "Misc")
+        }
     }
 
-    Kirigami.FormLayout {
+    StackLayout {
         anchors.fill: parent
+        currentIndex: appearanceTabs.currentIndex
 
-        ComboBox {
-            id: panelLayoutMode
-
-            Kirigami.FormData.label: i18nc("@label:listbox", "Panel layout:")
+        AppearanceTabs.AppearancePanelTab {
+            configRoot: root
             Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: [{
-                "label": i18nc("@item:inlistbox", "Single line"),
-                "value": "singleLine"
-            }, {
-                "label": i18nc("@item:inlistbox", "Simple"),
-                "value": "simple"
-            }, {
-                "label": i18nc("@item:inlistbox", "Multiline"),
-                "value": "multiline"
-            }]
-            Component.onCompleted: currentIndex = root.indexFor(model, root.cfg_panelLayoutMode)
-            onActivated: root.cfg_panelLayoutMode = currentValue
+            Layout.fillHeight: true
         }
 
-        ComboBox {
-            id: widgetTabs
-
-            Kirigami.FormData.label: i18nc("@label:listbox", "Widget layout:")
+        AppearanceTabs.AppearanceWidgetTab {
+            configRoot: root
             Layout.fillWidth: true
-            textRole: "label"
-            valueRole: "value"
-            model: [{
-                "label": i18nc("@item:inlistbox", "All tabs"),
-                "value": "all"
-            }, {
-                "label": i18nc("@item:inlistbox", "Live + Schedules + Recent Results"),
-                "value": "liveStats"
-            }, {
-                "label": i18nc("@item:inlistbox", "Live + Schedules + Tables"),
-                "value": "liveTables"
-            }, {
-                "label": i18nc("@item:inlistbox", "Live + Schedules + Fixtures"),
-                "value": "liveFixtures"
-            }, {
-                "label": i18nc("@item:inlistbox", "Live + Schedules"),
-                "value": "liveOnly"
-            }]
-            Component.onCompleted: currentIndex = root.indexFor(model, root.cfg_widgetTabs || "all")
-            onActivated: root.cfg_widgetTabs = currentValue
+            Layout.fillHeight: true
         }
 
+        AppearanceTabs.AppearanceTooltipTab {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
+        AppearanceTabs.AppearanceMiscTab {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
     }
-
 }

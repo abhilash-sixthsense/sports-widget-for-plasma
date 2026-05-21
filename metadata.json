@@ -3,7 +3,7 @@
     "KPlugin": {
         "Id": "org.kde.plasma.sports-widget-for-plasma",
         "Name": "Sports Widget for Plasma",
-        "Description": "A modern, highly customizable sports scores widget built specifically for KDE Plasma 6",
+        "Description": "Sports widget for Plasma desktop environment. Provides live scores, news, and updates for various sports.",
         "Icon": "applications-games",
         "Category": "Online Services",
         "License": "GPL-3.0-only",

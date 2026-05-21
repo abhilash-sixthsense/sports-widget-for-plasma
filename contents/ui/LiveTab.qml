@@ -62,6 +62,7 @@ Item {
             awayBadge: model.awayBadge || ""
             poster: model.poster || ""
             popular: Boolean(model.popular)
+            showScore: model.showScore !== false
             favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
             selected: index === root.selectedIndex
             expanded: index === liveList.expandedIndex

@@ -28,11 +28,15 @@ Rectangle {
     property bool popular: false
     property bool favorite: false
     property bool selected: false
+    property bool showScore: true
     readonly property color liveColor: Qt.rgba(1, 0.32, 0.32, 1)
 
     signal clicked()
 
     function scoreText() {
+        if (!root.showScore)
+            return "-";
+
         if (root.homeScore.length === 0 && root.awayScore.length === 0)
             return "-";
 

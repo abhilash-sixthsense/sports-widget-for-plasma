@@ -30,6 +30,7 @@ Item {
     property bool popular: false
     property bool favorite: false
     property bool selected: false
+    property bool showScore: true
     property bool expanded: false
     property bool detailsLoading: false
     property bool detailsLoaded: false
@@ -118,6 +119,7 @@ Item {
             awayBadge: root.awayBadge
             poster: root.poster
             popular: root.popular
+            showScore: root.showScore
             favorite: root.favorite
             selected: root.selected || root.expanded
             onClicked: root.clicked()

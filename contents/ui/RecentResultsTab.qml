@@ -16,6 +16,7 @@ Item {
     property string favoriteTeam: ""
     property bool loading: false
     property int selectedIndex: 0
+    property string emptyText: i18nc("@info:placeholder", "No recent results")
 
     signal matchSelected(int index)
 
@@ -70,6 +71,7 @@ Item {
             awayBadge: model.awayBadge
             poster: model.poster
             popular: model.popular
+            showScore: model.showScore !== false
             favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
             selected: index === root.selectedIndex
             onClicked: root.matchSelected(index)
@@ -114,7 +116,7 @@ Item {
 
             PlasmaComponents.Label {
                 Layout.fillWidth: true
-                text: i18nc("@info:placeholder", "No recent results")
+                text: root.emptyText
                 color: Kirigami.Theme.disabledTextColor
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
