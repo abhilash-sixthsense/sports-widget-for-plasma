@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import QtQuick
 import QtQuick.Layouts
@@ -51,11 +63,46 @@ Item {
     readonly property var tennisPlayerComparison: details && details.tennisPlayerComparison ? details.tennisPlayerComparison : null
     readonly property bool hasTennisSets: tennisSets !== null && Array.isArray(tennisSets.rows) && tennisSets.rows.length > 0
     readonly property bool hasTennisComparison: tennisPlayerComparison !== null && Array.isArray(tennisPlayerComparison.rows) && tennisPlayerComparison.rows.length > 0
-    readonly property string trackerUrl: details && details.trackerUrl ? String(details.trackerUrl) : ""
-    readonly property bool hasTracker: trackerUrl.length > 0 && String(root.sport || "").toLowerCase() === "cricket"
-    readonly property bool hasAnyDetails: hasInformation || hasEvents || hasStats || hasSummary || halfTimeScore.length > 0 || hasTennisSets || hasTennisComparison || hasTracker
+    // Tracker URL fallback cache, owned by the long-lived LiveMatchDelegate and
+    // passed in here. `details` gets reset to {} while the card is collapsed
+    // (periodic detail resets), so this component (recreated on every
+    // expand/collapse) cannot rely on `details.trackerUrl` alone at creation time.
+    property string cachedTrackerUrl: ""
 
-    onDetailsChanged: activeDetailsTab = 0
+    readonly property string trackerUrl: {
+        const fresh = details && details.trackerUrl ? String(details.trackerUrl) : "";
+        return fresh.length > 0 ? fresh : cachedTrackerUrl;
+    }
+    readonly property bool hasTracker: {
+        const s = String(root.sport || "").toLowerCase();
+        return trackerUrl.length > 0 && (s === "cricket" || s === "tennis" || s === "basketball");
+    }
+    readonly property bool hasStatisticsTab: {
+        const s = String(root.sport || "").toLowerCase();
+        return s !== "tennis" && s !== "basketball" && s !== "cricket";
+    }
+    // Temporary extra tab to preview the live tracker for football alongside
+    // the existing Information/Details/Statistics tabs.
+    readonly property bool hasFootballTracker: trackerUrl.length > 0 && String(root.sport || "").toLowerCase() === "football"
+    readonly property bool hasAnyDetails: hasInformation || hasEvents || halfTimeScore.length > 0 || hasTennisSets || hasTracker || hasFootballTracker || (hasStatisticsTab && (hasStats || hasSummary || hasTennisComparison))
+
+    property bool _autoSwitchedToTracker: hasTracker
+
+    // Reset state when the user navigates to a different match.
+    onHomeTeamChanged: { activeDetailsTab = 0; _autoSwitchedToTracker = false; }
+    onAwayTeamChanged: { activeDetailsTab = 0; _autoSwitchedToTracker = false; }
+    onSportChanged:    { activeDetailsTab = 0; _autoSwitchedToTracker = false; }
+
+    onDetailsChanged: {
+        // Do NOT reset activeDetailsTab here — details reload every few seconds for live
+        // matches (detailsIdentity includes timestamp). Resetting here would continuously
+        // kick the user back to the Information tab while they watch the tracker.
+        // Auto-switch to Details tab the first time a usable tracker arrives.
+        if (hasTracker && !_autoSwitchedToTracker) {
+            _autoSwitchedToTracker = true
+            activeDetailsTab = 1
+        }
+    }
 
     function withAlpha(color, alpha) {
         return Qt.rgba(color.r, color.g, color.b, alpha);
@@ -218,8 +265,20 @@ Item {
                     text: i18nc("@tab:match details", "Details")
                 }
 
-                PlasmaComponents.TabButton {
-                    text: i18nc("@tab:match details", "Statistics")
+                Repeater {
+                    model: root.hasStatisticsTab ? 1 : 0
+
+                    PlasmaComponents.TabButton {
+                        text: i18nc("@tab:match details", "Statistics")
+                    }
+                }
+
+                Repeater {
+                    model: root.hasFootballTracker ? 1 : 0
+
+                    PlasmaComponents.TabButton {
+                        text: i18nc("@tab:match details", "Tracker")
+                    }
                 }
             }
 
@@ -297,11 +356,11 @@ Item {
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 
-                    // Cricket live tracker
+                    // Cricket / Tennis live tracker
                     Loader {
                         id: trackerLoader
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Kirigami.Units.gridUnit * 22
+                        Layout.preferredHeight: Kirigami.Units.gridUnit * 26
                         active: root.hasTracker
                         visible: active
                         source: active ? Qt.resolvedUrl("TrackerView.qml") : ""
@@ -317,7 +376,7 @@ Item {
                     // Tennis set-by-set scoreboard
                     ColumnLayout {
                         Layout.fillWidth: true
-                        visible: root.hasTennisSets
+                        visible: root.hasTennisSets && !root.hasTracker
                         spacing: 2
 
                         Repeater {
@@ -455,6 +514,32 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                         font: Kirigami.Theme.smallFont
+                    }
+                }
+
+                Repeater {
+                    model: root.hasFootballTracker ? 1 : 0
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+
+                        // Temporary: football live tracker preview
+                        Loader {
+                            id: footballTrackerLoader
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Kirigami.Units.gridUnit * 26
+                            active: root.hasFootballTracker
+                            visible: active
+                            source: active ? Qt.resolvedUrl("TrackerView.qml") : ""
+
+                            Binding {
+                                target: footballTrackerLoader.item
+                                property: "trackerUrl"
+                                value: root.trackerUrl
+                                when: footballTrackerLoader.status === Loader.Ready
+                            }
+                        }
                     }
                 }
             }

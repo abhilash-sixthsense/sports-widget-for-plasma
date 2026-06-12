@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../../code/SportVisuals.js" as SportVisuals
 import "../../code/providers/ProviderCatalog.js" as ProviderCatalog
@@ -74,7 +86,9 @@ Item {
         return ProviderCatalog.countryOptions(root.currentProvider, root.normalizedSport());
     }
 
-    function leagueOptions() {
+    // Cached so typing in the wizard's search field doesn't re-run the
+    // label normalization (regex-heavy) over every competition on each keystroke.
+    readonly property var leagueOptionsCache: {
         if (root.normalizedSport().length === 0)
             return [];
 
@@ -93,8 +107,27 @@ Item {
         });
     }
 
+    function leagueOptions() {
+        return root.leagueOptionsCache;
+    }
+
     function favoriteOptions() {
         return ProviderCatalog.countryTeamOptions(root.currentProvider, root.normalizedSport(), root.cfg_country);
+    }
+
+    // Shown above the page-progress dots so the user can see which sport/country
+    // they're currently configuring, e.g. "Football › Spain".
+    function wizardBreadcrumbText() {
+        const parts = [];
+
+        const sport = root.firstSport();
+        if (sport.length > 0)
+            parts.push(root.optionLabel(root.sportOptions(), sport) || sport);
+
+        if (root.pageIndex >= root.combinedPageIndex && root.cfg_country.length > 0)
+            parts.push(root.countryLabel());
+
+        return parts.join(" › ");
     }
 
     function countryLabel() {
@@ -411,10 +444,15 @@ Item {
     }
 
     function hasDraftSelections() {
-        return root.selectedLeagueValues().length > 0
+        return root.pendingEntries.length > 0
+            || root.selectedLeagueValues().length > 0
             || root.selectedNationalTeamValues().length > 0
             || root.selectedFavoriteTeamValues().length > 0
             || String(root.cfg_country || "").trim().length > 0;
+    }
+
+    function allPendingEntries() {
+        return root.pendingEntries.concat(root.currentEntries());
     }
 
     function selectedItems() {
@@ -448,6 +486,32 @@ Item {
         }
 
         return parts.join(" | ");
+    }
+
+    function pendingEntriesSummaryText() {
+        const entries = Array.isArray(root.pendingEntries) ? root.pendingEntries : [];
+        if (entries.length === 0)
+            return "";
+
+        const order = [];
+        const groups = {};
+        entries.forEach(entry => {
+            const sport = SportVisuals.label(entry.sport || "");
+            if (!groups[sport]) {
+                groups[sport] = [];
+                order.push(sport);
+            }
+            const title = root.entryTitle(entry);
+            if (title.length > 0)
+                groups[sport].push(title);
+        });
+
+        return order.map(sport => {
+            const names = groups[sport];
+            const preview = names.slice(0, 3).join(", ");
+            const suffix = names.length > 3 ? i18nc("@label", " and %1 more", names.length - 3) : "";
+            return sport + ": " + preview + suffix;
+        }).join(" | ");
     }
 
     function isNationalTeamLabel(teamName, countryLabel) {
@@ -484,11 +548,15 @@ Item {
             return;
         root.cfg_selectedSports = root.settingsRoot.cfg_selectedSports || "";
         root.cfg_country = root.settingsRoot.cfg_country || "";
-        root.cfg_league = root.settingsRoot.cfg_league || "";
-        root.cfg_favoriteTeam = root.settingsRoot.cfg_favoriteTeam || "";
+        root.cfg_league = "";
+        root.cfg_favoriteTeam = "";
+        // Start with no selections: cfg_league/cfg_favoriteTeam are leftovers from a
+        // previously saved entry, and pre-selecting them here would mark that saved
+        // competition/team as chosen and flag it as a duplicate before the user
+        // touches anything.
         root.cfg_selectedNationalTeams = [];
-        root.cfg_selectedLeagues = root.cfg_league.length > 0 ? [root.cfg_league] : [];
-        root.cfg_selectedFavoriteTeams = root.cfg_favoriteTeam.length > 0 ? [root.cfg_favoriteTeam] : [];
+        root.cfg_selectedLeagues = [];
+        root.cfg_selectedFavoriteTeams = [];
         root.cfg_selectedFavoriteTeamMeta = ({});
     }
 
@@ -528,6 +596,22 @@ Item {
             Item {
                 Layout.preferredWidth: 1
             }
+        }
+
+        Label {
+            id: wizardBreadcrumb
+
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredHeight: Kirigami.Units.gridUnit * 1.2
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            // Always takes up space (even with no text) so the dots row below
+            // doesn't jump when the breadcrumb appears/disappears.
+            text: root.wizardBreadcrumbText()
+            color: Kirigami.Theme.disabledTextColor
+            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize
+            elide: Text.ElideRight
         }
 
         RowLayout {
@@ -575,6 +659,23 @@ Item {
             }
 
             Button {
+                id: addSportButton
+
+                visible: root.pageIndex === root.pageCount - 1
+                icon.name: "list-add"
+                text: i18nc("@action:button", "Add Another Sport")
+                enabled: root.canAdvance()
+                onClicked: {
+                    if (!root.canAdvance())
+                        return;
+
+                    root.pendingEntries = root.pendingEntries.concat(root.currentEntries());
+                    root.selectSport("");
+                    root.pageIndex = 0;
+                }
+            }
+
+            Button {
                 id: nextButton
 
                 icon.name: root.pageIndex === root.pageCount - 1 ? "dialog-ok-apply" : "go-next"
@@ -585,7 +686,6 @@ Item {
                         return;
 
                     if (root.pageIndex === root.pageCount - 1) {
-                        root.pendingEntries = root.currentEntries();
                         reviewDialog.open();
                     } else {
                         if (root.tennisMode && root.pageIndex === 0)
@@ -598,9 +698,21 @@ Item {
     }
 
     Kirigami.InlineMessage {
-        id: duplicateInlineMessage
+        id: pendingEntriesInlineMessage
 
         anchors.top: header.bottom
+        anchors.topMargin: Kirigami.Units.smallSpacing
+        anchors.left: parent.left
+        anchors.right: parent.right
+        type: Kirigami.MessageType.Information
+        text: i18nc("@info", "Already added: %1. Click Done to save everything.", root.pendingEntriesSummaryText())
+        visible: root.pendingEntries.length > 0
+    }
+
+    Kirigami.InlineMessage {
+        id: duplicateInlineMessage
+
+        anchors.top: pendingEntriesInlineMessage.visible ? pendingEntriesInlineMessage.bottom : header.bottom
         anchors.topMargin: Kirigami.Units.smallSpacing
         anchors.left: parent.left
         anchors.right: parent.right
@@ -612,7 +724,9 @@ Item {
     Kirigami.InlineMessage {
         id: selectedItemsInlineMessage
 
-        anchors.top: duplicateInlineMessage.visible ? duplicateInlineMessage.bottom : header.bottom
+        anchors.top: duplicateInlineMessage.visible
+            ? duplicateInlineMessage.bottom
+            : (pendingEntriesInlineMessage.visible ? pendingEntriesInlineMessage.bottom : header.bottom)
         anchors.topMargin: Kirigami.Units.smallSpacing
         anchors.left: parent.left
         anchors.right: parent.right
@@ -634,7 +748,7 @@ Item {
 
             Label {
                 Layout.fillWidth: true
-                text: i18nc("@info", "If you go back now, your selected competitions and teams will be lost.")
+                text: i18nc("@info", "If you go back now, your selected competitions and teams will be lost, including any sports you've already added in this wizard.")
                 wrapMode: Text.WordWrap
             }
 
@@ -653,6 +767,7 @@ Item {
                     text: i18nc("@action:button", "Go Back")
                     onClicked: {
                         discardSelectionsDialog.close();
+                        root.pendingEntries = [];
                         root.closeRequested();
                     }
                 }
@@ -696,7 +811,7 @@ Item {
                         spacing: Kirigami.Units.smallSpacing
 
                         Repeater {
-                            model: root.pendingEntries
+                            model: root.allPendingEntries()
 
                             delegate: Label {
                                 required property int index
@@ -713,7 +828,7 @@ Item {
                 Kirigami.InlineMessage {
                     Layout.fillWidth: true
                     type: Kirigami.MessageType.Warning
-                    text: root.duplicateWarningText(root.pendingEntries)
+                    text: root.duplicateWarningText(root.allPendingEntries())
                     visible: text.length > 0
                 }
 
@@ -730,10 +845,11 @@ Item {
                     Button {
                         icon.name: "document-save"
                         text: i18nc("@action:button", "Save")
-                        enabled: root.pendingEntries.length > 0
+                        enabled: root.allPendingEntries().length > 0
                         onClicked: {
-                            const entries = root.pendingEntries.slice();
+                            const entries = root.allPendingEntries();
                             reviewDialog.close();
+                            root.pendingEntries = [];
                             root.finishRequested(entries);
                         }
                     }
@@ -747,7 +863,9 @@ Item {
 
         anchors.top: selectedItemsInlineMessage.visible
             ? selectedItemsInlineMessage.bottom
-            : (duplicateInlineMessage.visible ? duplicateInlineMessage.bottom : header.bottom)
+            : (duplicateInlineMessage.visible
+                ? duplicateInlineMessage.bottom
+                : (pendingEntriesInlineMessage.visible ? pendingEntriesInlineMessage.bottom : header.bottom))
         anchors.topMargin: Kirigami.Units.largeSpacing
         anchors.left: parent.left
         anchors.right: parent.right

@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 .pragma library
 .import "providers/ProviderCatalog.js" as ProviderCatalog
@@ -12,6 +24,8 @@ const SPORTSCORE_MATCH_LIMIT = 50;
 const SPORTSCORE_COUNTRY_COMPETITION_LIMIT = 64;
 const SPORTSCORE_COUNTRY_COMPETITION_CONCURRENCY = 6;
 const SPORTSCORE_TEAM_LIMIT = 2000;
+const SPORTSCORE_BASKETBALL_TRACKER_PROFILE = "47q3ktv6gh1u8mx";
+const SPORTSCORE_RECENT_MATCH_MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 14000;
 
 function fetchLiveScores(options, onSuccess, onError) {
@@ -103,6 +117,11 @@ function fetchTeamCompetitions(options, onSuccess, onError) {
     }, error => finish(onError, error));
 }
 
+// Competitions per (sport, country) rarely change within a session, but are
+// re-fetched every time the wizard revisits a country. Cache successful
+// results so re-selecting a country (e.g. "world") is instant.
+const _countryCompetitionsCache = {};
+
 function fetchCountryCompetitions(options, onSuccess, onError) {
     if (!canUseSportScore(options)) {
         finish(onSuccess, []);
@@ -116,6 +135,12 @@ function fetchCountryCompetitions(options, onSuccess, onError) {
     }
 
     const sport = normalizedSport(options && options.sports);
+    const cacheKey = sport + "|" + country;
+    if (_countryCompetitionsCache.hasOwnProperty(cacheKey)) {
+        finish(onSuccess, _countryCompetitionsCache[cacheKey]);
+        return;
+    }
+
     const sourcePath = SportScoreSports.competitionSourcePath(sport, country);
     const url = sourcePath.length > 0 ? SPORTSCORE_BASE_URL + sourcePath : "";
     if (url.length === 0) {
@@ -127,7 +152,9 @@ function fetchCountryCompetitions(options, onSuccess, onError) {
     const needsRootSupplement = sport === "tennis" && country === "world" && rootPath !== url;
     if (!needsRootSupplement) {
         requestText(cacheBustedUrl(url), html => {
-            finish(onSuccess, sportScoreCompetitionLinks(html, country, sport));
+            const rows = sportScoreCompetitionLinks(html, country, sport);
+            _countryCompetitionsCache[cacheKey] = rows;
+            finish(onSuccess, rows);
         }, error => finish(onError, error || "Unable to load SportScore competitions"));
         return;
     }
@@ -148,6 +175,7 @@ function fetchCountryCompetitions(options, onSuccess, onError) {
             if ((b.priority || 0) !== (a.priority || 0)) return (b.priority || 0) - (a.priority || 0);
             return String(a.label || "").localeCompare(String(b.label || ""));
         });
+        _countryCompetitionsCache[cacheKey] = merged;
         finish(onSuccess, merged);
     }
     requestText(cacheBustedUrl(url), html => combine(sportScoreCompetitionLinks(html, country, sport)), () => combine([]));
@@ -246,9 +274,23 @@ function fetchTennisMatchPage(options, onSuccess) {
 
 function sportScoreTennisSets(html) {
     const str = stringValue(html);
-    const setsMatch = /<div\b[^>]*(?:id=["']sets["']|class=["'][^"']*\bsets-card\b[^"']*["'])[^>]*>([\s\S]*?)<\/table>/i.exec(str);
-    if (!setsMatch) return null;
-    const block = setsMatch[0];
+    // Primary: find a div/section with id or class containing "sets" and "card"
+    let block = "";
+    const containerM = /<(?:div|section)\b[^>]*(?:id=["'][^"']*sets[^"']*["']|class=["'][^"']*\bsets-card\b[^"']*["'])[^>]*>([\s\S]*?)<\/table>/i.exec(str);
+    if (containerM) {
+        block = containerM[0];
+    } else {
+        // Fallback: any <table> whose content has both player-col and set-score cells
+        const tblPat = /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+        let tm;
+        while ((tm = tblPat.exec(str)) !== null) {
+            if (/player-col/.test(tm[1]) && /set-score/.test(tm[1])) {
+                block = tm[0];
+                break;
+            }
+        }
+    }
+    if (!block) return null;
 
     const titleMatch = /<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(block);
     const title = titleMatch ? htmlText(titleMatch[1]).replace(/\s+/g, " ").trim() : "Set-by-set scoreboard";
@@ -286,7 +328,20 @@ function sportScoreTennisSets(html) {
             while ((setM = setPat.exec(tr)) !== null)
                 setScores.push({ score: htmlText(setM[2]).trim(), winner: /\bwinner\b/.test(setM[1]) });
             const totalM = /<td\b[^>]*class=["'][^"']*\bsets-total\b[^"']*["'][^>]*>([\s\S]*?)<\/td>/i.exec(tr);
-            const totalSets = totalM ? htmlText(totalM[1]).trim() : "";
+            const rawTotal = totalM ? htmlText(totalM[1]).trim() : "";
+            const rawNum = parseInt(rawTotal, 10);
+            // rawTotal is authoritative when > 0. When it lags at "0" (some live matches),
+            // fall back to counting completed sets via winner-class cells.
+            // Guard with score >= 6 to exclude in-progress sets where sportscore
+            // pre-marks the current leader with the winner class.
+            const setsWon = setScores.filter(s => {
+                if (!s.winner) return false;
+                const n = parseInt(s.score, 10);
+                return !isNaN(n) && n >= 6;
+            }).length;
+            const totalSets = (!isNaN(rawNum) && rawNum > 0)
+                ? rawTotal
+                : (setsWon > 0 ? String(setsWon) : rawTotal);
             if (playerName.length > 0)
                 rows.push({ playerName, badge, setScores, totalSets });
         }
@@ -417,6 +472,14 @@ function sportScoreTrackerUrl(match) {
     const tracker = match && match.tracker;
     if (!tracker || !tracker.id || !tracker.sport)
         return "";
+
+    // SportScore's API reports an expired "profile" for the basketball pro
+    // tracker, so /api/widget/tracker/ shows "Your subscription has expired!".
+    // Their own match pages embed the basketball tracker directly with the
+    // same profile used for the cricket tracker, which is still active.
+    if (tracker.sport === "basketball")
+        return "https://widgets-v2.thesports01.com/en/pro/basketball?profile=" + SPORTSCORE_BASKETBALL_TRACKER_PROFILE + "&uuid=" + encodeURIComponent(tracker.id);
+
     return "https://sportscore.com/api/widget/tracker/?sport=" + encodeURIComponent(tracker.sport) + "&id=" + encodeURIComponent(tracker.id);
 }
 
@@ -883,7 +946,7 @@ function fetchSportScoreCompetitionMatches(options, mode, onSuccess, onError) {
     fetchSportScoreCompetitionPage(options, page => {
         const rows = filterSportScoreMatchesForMode(normalizeSportScoreMatchPage(page.html, sportScoreLeagueLabel(options), options), mode);
         finish(onSuccess, mode === "recent" ? sortRecentMatches(dedupeMatches(rows)) : sortMatches(dedupeMatches(rows)));
-    }, onError);
+    }, onError, true);
 }
 
 function fetchSportScoreGlobalLiveMatches(options, onSuccess, onError) {
@@ -966,14 +1029,14 @@ function fetchSportScoreLeagueTable(options, onSuccess, onError) {
     function fetchFromCompetitionPage() {
         fetchSportScoreCompetitionPage(options, page => {
             finish(onSuccess, normalizeSportScoreCompetitionTablePage(page.html, sportScoreLeagueLabel(options), options));
-        }, error => finish(onError, error));
+        }, error => finish(onError, error), true);
     }
 
     function fetchCompetitionPageForComparison(apiRows) {
         fetchSportScoreCompetitionPage(options, page => {
             const htmlRows = normalizeSportScoreCompetitionTablePage(page.html, sportScoreLeagueLabel(options), options);
             finish(onSuccess, shouldPreferSportScoreHtmlStandings(apiRows, htmlRows) ? htmlRows : mergeSportScoreHtmlFormsIntoStandings(apiRows, htmlRows));
-        }, () => finish(onSuccess, apiRows));
+        }, () => finish(onSuccess, apiRows), true);
     }
 
     if (!canUseSportScoreWidgetStandings(options)) {
@@ -1102,7 +1165,7 @@ function normalizeSportScoreWidgetStandings(payload, options) {
             || stringValue(left.team).localeCompare(stringValue(right.team)));
 }
 
-function fetchSportScoreCompetitionPage(options, onSuccess, onError) {
+function fetchSportScoreCompetitionPage(options, onSuccess, onError, allowDefaultSeasonRedirect) {
     resolveSportScoreCompetitionPath(options, path => {
         if (path.length === 0) {
             finish(onSuccess, { html: "", path: "", url: "" });
@@ -1110,14 +1173,61 @@ function fetchSportScoreCompetitionPage(options, onSuccess, onError) {
         }
 
         const requestedSeasonPath = sportScoreRequestedSeasonPath(path, options);
-        requestText(cacheBustedUrl(absoluteSportScoreUrl(requestedSeasonPath || path)), html => {
-            finish(onSuccess, {
-                html,
-                path: requestedSeasonPath || path,
-                url: absoluteSportScoreUrl(requestedSeasonPath || path)
-            });
+        const initialPath = requestedSeasonPath || path;
+        requestText(cacheBustedUrl(absoluteSportScoreUrl(initialPath)), html => {
+            const defaultSeasonPath = (requestedSeasonPath.length === 0 && allowDefaultSeasonRedirect)
+                ? sportScoreCurrentSeasonPathIfStale(html, initialPath, options)
+                : "";
+            if (defaultSeasonPath.length === 0) {
+                finish(onSuccess, { html, path: initialPath, url: absoluteSportScoreUrl(initialPath) });
+                return;
+            }
+
+            requestText(cacheBustedUrl(absoluteSportScoreUrl(defaultSeasonPath)), seasonHtml => {
+                finish(onSuccess, { html: seasonHtml, path: defaultSeasonPath, url: absoluteSportScoreUrl(defaultSeasonPath) });
+            }, () => finish(onSuccess, { html, path: initialPath, url: absoluteSportScoreUrl(initialPath) }));
         }, onError);
     }, onError);
+}
+
+// SportScore's "current season" competition page can lag behind the season
+// selector for tournaments that only run periodically (e.g. the FIFA World
+// Cup): the match list still shows the most recently *finished* tournament
+// while the season dropdown already lists the upcoming/current one as the
+// latest entry. When that mismatch is detected, refetch the season-specific
+// page that the dropdown marks as default so recent results/fixtures reflect
+// the right edition.
+function sportScoreCurrentSeasonPathIfStale(html, currentPath, options) {
+    const sport = normalizedSport(options && (options.sports || options.sport)) || "football";
+    if (sport !== "football")
+        return "";
+
+    const defaultSeason = sportScoreSeasonOptionsFromCompetitionPage(html).find(season => season && season.isDefault);
+    if (!defaultSeason)
+        return "";
+
+    const defaultPath = sportScorePathFromUrl(defaultSeason.path);
+    const normalizedCurrentPath = sportScorePathFromUrl(currentPath);
+    if (defaultPath.length === 0 || defaultPath === normalizedCurrentPath)
+        return "";
+    if (sportScorePathWithoutSeason(defaultPath) !== sportScorePathWithoutSeason(normalizedCurrentPath))
+        return "";
+
+    const rows = normalizeSportScoreMatchPage(html, "", options);
+    const matchesDefaultSeason = rows.some(row => {
+        const timestamp = numberValue(row && row.timestamp);
+        return timestamp > 0 && sportScoreSeasonKeyMatchesYear(defaultSeason.key, new Date(timestamp).getUTCFullYear());
+    });
+
+    return matchesDefaultSeason ? "" : defaultPath;
+}
+
+function sportScoreSeasonKeyMatchesYear(key, year) {
+    const range = /^(\d{4})-(\d{4})$/.exec(stringValue(key));
+    if (range)
+        return year === numberValue(range[1]) || year === numberValue(range[2]);
+    const single = /^(\d{4})$/.exec(stringValue(key));
+    return single ? year === numberValue(single[1]) : false;
 }
 
 function resolveSportScoreCompetitionPath(options, onSuccess, onError) {
@@ -1249,22 +1359,152 @@ function normalizeSportScoreMatchPage(html, leagueLabel, options) {
     } else {
         appendPattern(/<div class="football-match-table-container w-100 nostyle sc-row-stretched">([\s\S]*?)(?=<div class="d-flex d-md-none|<div class="football-match-table-container w-100 nostyle sc-row-stretched">|<\/section>|$)/g);
         appendPattern(/<a\b[^>]*class="[^"]*\bfootball-match-table-container\b[^"]*\bnostyle\b[^"]*"[^>]*>[\s\S]*?<\/a>/g);
+        rows = rows.concat(sportScoreSeasonOverviewMatchRows(page, leagueLabel, options));
     }
     rows = rows.concat(sportScoreJsonLdUpcomingMatches(page, leagueLabel, options));
     return dedupeMatches(rows);
 }
 
+// Season-specific competition pages (e.g. /football/competition/.../2026/)
+// render a "season overview" layout with simple "Recent results" /
+// "Upcoming fixtures" lists instead of the full match table used by the
+// "current season" competition page.
+function sportScoreSeasonOverviewMatchRows(page, leagueLabel, options) {
+    const sport = normalizedSport(options && (options.sports || options.sport)) || "football";
+    let rows = [];
+    appendSportScoreSeasonOverviewRows(page, "Recent results", true, sport, leagueLabel, options, rows);
+    appendSportScoreSeasonOverviewRows(page, "Upcoming fixtures", false, sport, leagueLabel, options, rows);
+    return rows;
+}
+
+function appendSportScoreSeasonOverviewRows(page, heading, isFinished, sport, leagueLabel, options, rows) {
+    const section = sportScoreSeasonOverviewSection(page, heading);
+    if (section.length === 0)
+        return;
+
+    const rowPattern = /<div class="match-row sc-row-stretched">([\s\S]*?)<\/div>/g;
+    let match;
+    while ((match = rowPattern.exec(section)) !== null) {
+        const block = match[1];
+        const homeText = htmlText((/<span class="home">([\s\S]*?)<\/span>/.exec(block) || [])[1]);
+        const awayText = htmlText((/<span class="away">([\s\S]*?)<\/span>/.exec(block) || [])[1]);
+        if (homeText.length === 0 || awayText.length === 0)
+            continue;
+
+        const hrefMatch = /href="([^"]*\/match\/[^"]*)"/.exec(block);
+        const path = hrefMatch ? sportScorePathFromUrl(hrefMatch[1]) : "";
+        const whenText = htmlText((/<span class="when">([\s\S]*?)<\/span>/.exec(block) || [])[1]);
+        const scoreText = htmlText((/<span class="score[^"]*">([\s\S]*?)<\/span>/.exec(block) || [])[1]);
+        const scoreMatch = /(\d+)\s*-\s*(\d+)/.exec(scoreText);
+        const status = isFinished ? "Finished" : "Upcoming";
+        const timestamp = sportScoreSeasonOverviewTimestamp(whenText, isFinished);
+
+        rows.push({
+            id: "sportscore-" + stringValue(path || (homeText + "-" + awayText + "-" + whenText)),
+            sport,
+            league: leagueLabel || "",
+            homeTeam: homeText,
+            awayTeam: awayText,
+            homeScore: status === "Upcoming" ? "" : stringValue(scoreMatch && scoreMatch[1]),
+            awayScore: status === "Upcoming" ? "" : stringValue(scoreMatch && scoreMatch[2]),
+            status,
+            statusText: status,
+            minute: "",
+            startTime: timestamp > 0 ? formatStartTime(timestamp, options) : "",
+            timestamp: timestamp > 0 ? timestamp : 0,
+            matchday: "",
+            group: "",
+            stadium: "",
+            homeBadge: "",
+            awayBadge: "",
+            poster: "",
+            popular: false,
+            matchPath: path,
+            liveUrl: sportScoreWidgetMatchUrlFromPath(path, sport),
+            detailsProvider: "sportscore",
+            statsProvider: "sportscore",
+            sourceProvider: "SportScore"
+        });
+    }
+}
+
+function sportScoreSeasonOverviewSection(page, heading) {
+    const headingPattern = new RegExp("<h2[^>]*>\\s*" + escapeRegExp(heading) + "\\s*<\\/h2>", "i");
+    const headingMatch = headingPattern.exec(page);
+    if (!headingMatch)
+        return "";
+
+    const start = headingMatch.index + headingMatch[0].length;
+    const nextHeadingMatch = /<h2[^>]*>/i.exec(page.slice(start));
+    const end = nextHeadingMatch ? start + nextHeadingMatch.index : page.length;
+    return page.slice(start, end);
+}
+
+function sportScoreSeasonOverviewTimestamp(whenText, isFinished) {
+    const text = stringValue(whenText).trim();
+
+    if (isFinished) {
+        const match = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/.exec(text);
+        if (!match)
+            return 0;
+        const monthIndex = sportScoreMonthIndex(match[2]);
+        return monthIndex < 0 ? 0 : Date.UTC(numberValue(match[3]), monthIndex, numberValue(match[1]), 12, 0, 0);
+    }
+
+    const match = /^(\d{1,2})\s+([A-Za-z]+),?\s+(\d{1,2}):(\d{2})$/.exec(text);
+    if (!match)
+        return 0;
+
+    const monthIndex = sportScoreMonthIndex(match[2]);
+    if (monthIndex < 0)
+        return 0;
+
+    const day = numberValue(match[1]);
+    const hour = numberValue(match[3]);
+    const minute = numberValue(match[4]);
+    const year = new Date().getUTCFullYear();
+    let timestamp = Date.UTC(year, monthIndex, day, hour, minute, 0);
+    if (timestamp < Date.now() - 24 * 60 * 60 * 1000)
+        timestamp = Date.UTC(year + 1, monthIndex, day, hour, minute, 0);
+    return timestamp;
+}
+
+function sportScoreMonthIndex(name) {
+    const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    return months.indexOf(stringValue(name).toLowerCase().slice(0, 3));
+}
+
 function sportScoreTennisMatchRows(page, leagueLabel, options) {
     let rows = [];
+    const pageStr = stringValue(page);
+
+    // Track every match-state-header element (e.g. "Live", "Upcoming",
+    // "Finished" round headers) so each match block can be matched against
+    // the section it actually falls under, regardless of how far that
+    // header is from the match block (a fixed-size backward window misses
+    // headers when several matches share the same live section).
+    const headerPattern = /<[^>]*\bclass=["'][^"']*\bmatch-state-header\b[^"']*["'][^>]*>/g;
+    const headers = [];
+    let headerMatch;
+    while ((headerMatch = headerPattern.exec(pageStr)) !== null)
+        headers.push({ index: headerMatch.index, isLive: /\bis-live\b/i.test(headerMatch[0]) });
+
+    function isLiveSectionAt(position) {
+        let result = false;
+        for (let i = 0; i < headers.length && headers[i].index <= position; i++)
+            result = headers[i].isLive;
+        return result;
+    }
+
     // Use lookahead to avoid being cut short by nested </a> tags (e.g. player profile links inside match blocks)
     const pattern = /<a\b[^>]*class=["'][^"']*\bfootball-match-table-container\b[^"']*\bnostyle\b[^"']*["'][^>]*>[\s\S]*?(?=<a\b[^>]*class=["'][^"']*\bfootball-match-table-container\b|<div\b[^>]*class=["'][^"']*\bmatch-state-header\b|<\/section>|$)/g;
     let match;
-    while ((match = pattern.exec(stringValue(page))) !== null) {
+    while ((match = pattern.exec(pageStr)) !== null) {
         const block = match[0];
         const hrefMatch = /href=["'](\/tennis\/match\/[^"']+\/?)["']/.exec(block);
         if (!hrefMatch)
             continue;
-        const context = stringValue(page).slice(Math.max(0, match.index - 900), match.index);
+        const context = pageStr.slice(Math.max(0, match.index - 900), match.index);
         const players = sportScoreTennisPlayers(block);
         if (players.length < 2)
             continue;
@@ -1272,7 +1512,7 @@ function sportScoreTennisMatchRows(page, leagueLabel, options) {
         const scoreText = htmlText((/<div\b[^>]*class=["'][^"']*\btennis-score-col\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(block) || [])[1]);
         const scoreMatch = /(\d+)\s*-\s*(\d+)/.exec(scoreText);
         const statusText = htmlText((/<div\b[^>]*class=["'][^"']*\bfootball-match-table-time-str\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(block) || [])[1]);
-        const liveSection = /match-state-header[^>]*\bis-live\b/i.test(context.slice(context.lastIndexOf("match-state-header")));
+        const liveSection = isLiveSectionAt(match.index);
         const rawStatus = liveSection ? "Live" : statusText;
         const status = sportScoreMatchStatus(rawStatus, scoreMatch && scoreMatch[1], scoreMatch && scoreMatch[2]);
         const timestamp = Date.parse(firstDataUtc(block));
@@ -1286,7 +1526,7 @@ function sportScoreTennisMatchRows(page, leagueLabel, options) {
             homeScore: status === "Upcoming" ? "" : stringValue(scoreMatch && scoreMatch[1]),
             awayScore: status === "Upcoming" ? "" : stringValue(scoreMatch && scoreMatch[2]),
             status,
-            minute: "",
+            minute: status === "Live" ? statusText : "",
             startTime: Number.isFinite(timestamp) ? formatStartTime(timestamp, options) : "",
             timestamp: Number.isFinite(timestamp) ? timestamp : 0,
             matchday: "",
@@ -1474,7 +1714,7 @@ function filterSportScoreMatchesForMode(matches, mode) {
         if (mode === "fixtures")
             return !isFinishedMatch(match) && !isLiveMatch(match) && (numberValue(match && match.timestamp) === 0 || numberValue(match.timestamp) >= now - 3 * 60 * 60 * 1000);
         if (mode === "recent")
-            return isFinishedMatch(match);
+            return isFinishedMatch(match) && (numberValue(match && match.timestamp) === 0 || numberValue(match.timestamp) >= now - SPORTSCORE_RECENT_MATCH_MAX_AGE_MS);
         return true;
     });
 }

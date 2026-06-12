@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../code/SportsApi.js" as SportsApi
 import QtQuick
@@ -38,13 +50,31 @@ Rectangle {
 
     signal clicked()
     signal doubleClicked()
+    signal scoreInfoClicked()
+
+    readonly property bool showScoreInfo: {
+        if (!root.showScore || root.status === "Upcoming")
+            return false;
+
+        const s = String(root.sport || "").toLowerCase();
+        if (s === "tennis")
+            return true;
+        if (s === "cricket" || s === "basketball")
+            return root.homeScore.length > 0;
+        return false;
+    }
 
     function scoreText() {
         if (!root.showScore)
             return "-";
 
-        if (root.homeScore.length === 0 && root.awayScore.length === 0)
+        if (root.homeScore.length === 0 && root.awayScore.length === 0) {
+            // Tennis live/finished scores are unreliable from the API; show a
+            // placeholder "0 - 0" with the info icon instead of a bare dash.
+            if (String(root.sport || "").toLowerCase() === "tennis" && root.status !== "Upcoming")
+                return "0 - 0";
             return "-";
+        }
         let value = root.homeScore + " - " + root.awayScore;
         if (root.homePenaltyScore.length > 0 && root.awayPenaltyScore.length > 0)
             value += " (" + i18nc("@label:penalty shoot-out short", "Pens") + " " + root.homePenaltyScore + "-" + root.awayPenaltyScore + ")";
@@ -132,6 +162,16 @@ Rectangle {
         return /^\d+\+\d*$/.test(SportsApi.normalizedLiveMinute(root.minute));
     }
 
+    function isTennisMatch() {
+        return String(root.sport || "").toLowerCase() === "tennis";
+    }
+
+    function liveStatusLabelText() {
+        if (root.isTennisMatch() && root.minute.trim().length > 0)
+            return root.minute.trim();
+        return i18nc("@info:live match status", "Live");
+    }
+
     function withAlpha(color, alpha) {
         try {
             if (!color || color.r === undefined || color.g === undefined || color.b === undefined)
@@ -196,13 +236,60 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
 
-            PlasmaComponents.Label {
+            Item {
                 Layout.fillWidth: true
-                text: scoreText()
-                color: root.selected ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
-                horizontalAlignment: Text.AlignHCenter
-                font.bold: true
-                font.pixelSize: Kirigami.Units.gridUnit
+                Layout.preferredHeight: Math.max(scoreLabel.implicitHeight, infoIconContainer.height)
+
+                PlasmaComponents.Label {
+                    id: scoreLabel
+                    anchors.centerIn: parent
+                    text: scoreText()
+                    color: root.selected ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+                    horizontalAlignment: Text.AlignHCenter
+                    font.bold: true
+                    font.pixelSize: Kirigami.Units.gridUnit
+                }
+
+                Item {
+                    id: infoIconContainer
+                    visible: root.showScoreInfo
+                    anchors.left: scoreLabel.right
+                    anchors.leftMargin: Kirigami.Units.smallSpacing / 2
+                    anchors.verticalCenter: scoreLabel.verticalCenter
+                    width: infoIcon.width
+                    height: infoIcon.height
+
+                    Kirigami.Icon {
+                        id: infoIcon
+                        width: Kirigami.Units.iconSizes.small
+                        height: width
+                        source: "dialog-information"
+                        isMask: true
+                        color: infoMouseArea.containsMouse
+                            ? (root.selected ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor)
+                            : (root.selected ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.disabledTextColor)
+
+                        Behavior on color {
+                            ColorAnimation { duration: Kirigami.Units.shortDuration }
+                        }
+                    }
+
+                    MouseArea {
+                        id: infoMouseArea
+                        anchors.fill: parent
+                        anchors.margins: -Kirigami.Units.smallSpacing
+                        cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onClicked: function(mouse) {
+                            mouse.accepted = true;
+                            root.scoreInfoClicked();
+                        }
+
+                        PlasmaComponents.ToolTip.text: i18nc("@info:tooltip", "Score may be inaccurate. Click to view match details.")
+                        PlasmaComponents.ToolTip.visible: containsMouse
+                        PlasmaComponents.ToolTip.delay: 600
+                    }
+                }
             }
 
             Item {
@@ -251,7 +338,7 @@ Rectangle {
 
                     PlasmaComponents.Label {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: i18nc("@info:live match status", "Live")
+                        text: root.liveStatusLabelText()
                         color: root.liveColor
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -261,7 +348,7 @@ Rectangle {
 
                     PlasmaComponents.Label {
                         anchors.verticalCenter: parent.verticalCenter
-                        visible: !root.hasStoppageTime() && root.liveMinuteText().length > 0
+                        visible: !root.isTennisMatch() && !root.hasStoppageTime() && root.liveMinuteText().length > 0
                         text: root.liveMinuteText()
                         color: root.liveColor
                         font.bold: true

@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../../code/providers/ProviderCatalog.js" as ProviderCatalog
 import QtQuick
@@ -14,6 +26,7 @@ import org.kde.plasma.plasmoid
 KCM.SimpleKCM {
     id: root
 
+    property alias cfg_smartRefreshEnabled: smartRefreshEnabled.checked
     property alias cfg_refreshInterval: refreshInterval.value
     property alias cfg_liveRefreshEnabled: liveRefreshEnabled.checked
     property alias cfg_liveRefreshInterval: liveRefreshInterval.value
@@ -56,9 +69,10 @@ KCM.SimpleKCM {
     property bool cfg_defaultSelectionMigratedDefault: false
     property int cfg_selectionRevisionDefault: 0
     property int cfg_activeSavedLeagueIndexDefault: 0
-    property int cfg_refreshIntervalDefault: 15
+    property bool cfg_smartRefreshEnabledDefault: true
+    property int cfg_refreshIntervalDefault: 30
     property bool cfg_liveRefreshEnabledDefault: true
-    property int cfg_liveRefreshIntervalDefault: 30
+    property int cfg_liveRefreshIntervalDefault: 60
     property string cfg_nationalTeamVisualStyleDefault: "emblems"
     property string cfg_panelLayoutModeDefault: "teamsAndBadges"
     property string cfg_panelAreaModeDefault: "auto"
@@ -104,19 +118,39 @@ KCM.SimpleKCM {
             onActivated: root.cfg_defaultSport = currentValue
         }
 
-        SpinBox {
-            id: refreshInterval
+        Switch {
+            id: smartRefreshEnabled
 
+            Kirigami.FormData.label: i18nc("@label:chooser", "Refresh:")
+            text: i18nc("@option:check", "Smart")
+            checked: true
+        }
+
+        Label {
+            Layout.fillWidth: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 22
+            text: i18nc("@info", "Automatically checks for upcoming matches every 30 minutes, and live scores every 60 seconds while a match is in progress, to limit network requests. Turn off to set your own refresh times.")
+            wrapMode: Text.WordWrap
+            font: Kirigami.Theme.smallFont
+            color: Kirigami.Theme.disabledTextColor
+        }
+
+        RowLayout {
             Kirigami.FormData.label: i18nc("@label:spinbox", "Full refresh:")
-            from: 1
-            to: 1440
-            stepSize: 5
-            editable: true
-            textFromValue: (value) => {
-                return i18ncp("@item:valuesuffix minutes", "%1 minute", "%1 minutes", value);
+            spacing: Kirigami.Units.smallSpacing
+
+            SpinBox {
+                id: refreshInterval
+
+                from: 1
+                to: 1440
+                stepSize: 5
+                editable: true
+                enabled: !smartRefreshEnabled.checked
             }
-            valueFromText: (text) => {
-                return parseInt(text, 10);
+
+            Label {
+                text: i18ncp("@label:spinbox", "minute", "minutes", refreshInterval.value)
             }
         }
 
@@ -125,22 +159,25 @@ KCM.SimpleKCM {
 
             Kirigami.FormData.label: i18nc("@label:checkbox", "Live matches:")
             text: i18nc("@option:check", "Update separately")
+            enabled: !smartRefreshEnabled.checked
         }
 
-        SpinBox {
-            id: liveRefreshInterval
-
+        RowLayout {
             Kirigami.FormData.label: i18nc("@label:spinbox", "Live refresh:")
-            from: 10
-            to: 300
-            stepSize: 5
-            editable: true
-            enabled: liveRefreshEnabled.checked
-            textFromValue: (value) => {
-                return i18ncp("@item:valuesuffix seconds", "%1 second", "%1 seconds", value);
+            spacing: Kirigami.Units.smallSpacing
+
+            SpinBox {
+                id: liveRefreshInterval
+
+                from: 10
+                to: 300
+                stepSize: 5
+                editable: true
+                enabled: !smartRefreshEnabled.checked && liveRefreshEnabled.checked
             }
-            valueFromText: (text) => {
-                return parseInt(text, 10);
+
+            Label {
+                text: i18ncp("@label:spinbox", "second", "seconds", liveRefreshInterval.value)
             }
         }
 

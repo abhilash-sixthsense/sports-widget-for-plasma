@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../../code/SportVisuals.js" as SportVisuals
 import "../../code/SportsApi.js" as SportsApi
@@ -17,9 +29,7 @@ ColumnLayout {
     id: root
 
     property var configRoot
-    property int renameIndex: -1
     property int deleteIndex: -1
-    property string renameType: "competition"
     signal addRequested()
 
     spacing: Kirigami.Units.largeSpacing
@@ -247,15 +257,6 @@ ColumnLayout {
         }
     }
 
-    function openRenameDialog(index, entry) {
-        root.renameIndex = index;
-        root.renameType = root.entryType(entry);
-        leagueNameField.text = root.configRoot.displayLeagueLabel(entry);
-        countryNameField.text = root.configRoot.displayCountryLabel(entry);
-        favoriteNameField.text = root.configRoot.displayFavoriteTeam(entry);
-        renameDialog.open();
-    }
-
     function requestRemoveSavedLeague(index) {
         if (!root.configRoot)
             return;
@@ -321,56 +322,6 @@ ColumnLayout {
         addText: ""
         emptyText: i18nc("@info", "Save teams here to follow them across competitions.")
         listModel: teamModel
-    }
-
-    Dialog {
-        id: renameDialog
-
-        modal: true
-        title: root.renameType === "team" ? i18nc("@title:window", "Rename Saved Team") : i18nc("@title:window", "Rename Saved Competition")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-
-        GridLayout {
-            columns: 2
-            rowSpacing: Kirigami.Units.smallSpacing
-            columnSpacing: Kirigami.Units.largeSpacing
-
-            Label {
-                text: i18nc("@label:textbox", "Competition:")
-            }
-
-            TextField {
-                id: leagueNameField
-
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 18
-                selectByMouse: true
-            }
-
-            Label {
-                text: i18nc("@label:textbox", "Country:")
-            }
-
-            TextField {
-                id: countryNameField
-
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 18
-                selectByMouse: true
-            }
-
-            Label {
-                text: root.renameType === "team" ? i18nc("@label:textbox", "Team:") : i18nc("@label:textbox", "Highlighted team:")
-            }
-
-            TextField {
-                id: favoriteNameField
-
-                Layout.preferredWidth: Kirigami.Units.gridUnit * 18
-                selectByMouse: true
-                placeholderText: root.renameType === "team" ? i18nc("@info:placeholder", "Team name") : i18nc("@info:placeholder", "No highlighted team")
-            }
-        }
-
-        onAccepted: root.configRoot.renameSavedLeague(root.renameIndex, leagueNameField.text, countryNameField.text, favoriteNameField.text)
     }
 
     Kirigami.Dialog {
@@ -514,6 +465,8 @@ ColumnLayout {
                     Layout.preferredWidth: Kirigami.Units.iconSizes.small
                     Layout.preferredHeight: Layout.preferredWidth
                     source: Qt.resolvedUrl("../../icons/sports/" + SportVisuals.iconName(section))
+                    isMask: true
+                    color: Kirigami.Theme.textColor
                 }
 
                 Label {
@@ -568,8 +521,6 @@ ColumnLayout {
 
                 width: savedLeagueList.width
                 implicitHeight: savedDelegate.implicitHeight
-
-                readonly property var entryData: root.parseEntry(entryJson)
 
                 ItemDelegate {
                     id: savedDelegate
@@ -658,79 +609,51 @@ ColumnLayout {
                                 font.pixelSize: Kirigami.Theme.smallFont.pixelSize
                             }
 
-                            ColumnLayout {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 0
+                                spacing: Kirigami.Units.smallSpacing
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Kirigami.Units.smallSpacing
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Live")
-                                        checked: savedDelegateRoot.includeLive
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeLive", checked)
-                                    }
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Schedules")
-                                        checked: savedDelegateRoot.includeSchedules
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeSchedules", checked)
-                                    }
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Recent")
-                                        checked: savedDelegateRoot.includeRecent
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeRecent", checked)
-                                    }
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Tables")
-                                        checked: savedDelegateRoot.includeTables
-                                        enabled: savedDelegateRoot.supportsTables
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeTables", checked)
-                                    }
+                                Switch {
+                                    text: i18nc("@label:switch", "Live")
+                                    checked: savedDelegateRoot.includeLive
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeLive", checked)
                                 }
 
-                                RowLayout {
+                                Switch {
+                                    text: i18nc("@label:switch", "Schedules")
+                                    checked: savedDelegateRoot.includeSchedules
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeSchedules", checked)
+                                }
+
+                                Switch {
+                                    text: i18nc("@label:switch", "Recent")
+                                    checked: savedDelegateRoot.includeRecent
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeRecent", checked)
+                                }
+
+                                Switch {
+                                    text: i18nc("@label:switch", "Tables")
+                                    checked: savedDelegateRoot.includeTables
+                                    enabled: savedDelegateRoot.supportsTables
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeTables", checked)
+                                }
+
+                                Switch {
+                                    text: i18nc("@label:switch", "Panel")
+                                    checked: savedDelegateRoot.includePanel
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includePanel", checked)
+                                }
+
+                                Switch {
+                                    text: i18nc("@label:switch", "Tooltip")
+                                    checked: savedDelegateRoot.includeTooltip
+                                    onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeTooltip", checked)
+                                }
+
+                                Item {
                                     Layout.fillWidth: true
-                                    spacing: Kirigami.Units.smallSpacing
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Panel")
-                                        checked: savedDelegateRoot.includePanel
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includePanel", checked)
-                                    }
-
-                                    Switch {
-                                        text: i18nc("@label:switch", "Tooltip")
-                                        checked: savedDelegateRoot.includeTooltip
-                                        onClicked: root.setDelegateInclude(sectionRoot.listModel, savedDelegateRoot.index, savedDelegateRoot.sourceIndex, "includeTooltip", checked)
-                                    }
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                    }
                                 }
                             }
-                        }
-
-                        ToolButton {
-                            icon.name: "edit-rename"
-                            display: AbstractButton.IconOnly
-                            text: i18nc("@action:button", "Rename")
-                            ToolTip.visible: hovered
-                            ToolTip.text: i18nc("@info:tooltip", "Rename saved labels")
-                            onClicked: root.openRenameDialog(savedDelegateRoot.sourceIndex, savedDelegateRoot.entryData)
-                        }
-
-                        ToolButton {
-                            icon.name: "configure"
-                            display: AbstractButton.IconOnly
-                            text: i18nc("@action:button", "Edit")
-                            ToolTip.visible: hovered
-                            ToolTip.text: i18nc("@info:tooltip", "Change this saved sport")
-                            onClicked: root.configRoot.openEditSavedLeague(savedDelegateRoot.entryData, savedDelegateRoot.sourceIndex)
                         }
 
                         ToolButton {

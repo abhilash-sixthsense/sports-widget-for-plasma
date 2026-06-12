@@ -3,10 +3,10 @@
     "KPlugin": {
         "Id": "org.kde.plasma.sports-widget-for-plasma",
         "Name": "Sports Widget for Plasma",
-        "Description": "Sports widget for Plasma desktop environment. Provides live scores, news, and updates for various sports.",
+        "Description": "Sports widget for KDE Plasma desktop environment. Provides live scores, results, schedules and tables for various sports.",
         "Icon": "applications-games",
         "Category": "Online Services",
-        "License": "GPL-3.0-only",
+        "License": "GPL-2.0-or-later",
         "Authors": [
             {
                 "Name": "Petar Nedyalkov",
@@ -14,7 +14,7 @@
                 "Role": "Author, design and development"
             }
         ],
-        "Version": "0.1.0 (Alpha 1)",
+        "Version": "0.8.0",
         "Website": "https://github.com/pnedyalkov/sports-widget-for-plasma",
         "BugReportUrl": "https://github.com/pnedyalkov/sports-widget-for-plasma/issues"
     },

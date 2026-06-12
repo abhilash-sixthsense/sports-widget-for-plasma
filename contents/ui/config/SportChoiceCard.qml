@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import QtQuick
 import QtQuick.Controls
@@ -103,7 +115,10 @@ ItemDelegate {
             text: i18nc("@action:button", "Information")
             ToolTip.visible: hovered
             ToolTip.text: i18nc("@info:tooltip", "Show tournaments")
-            onClicked: infoDialog.open()
+            onClicked: {
+                infoDialogLoader.active = true;
+                infoDialogLoader.item.open();
+            }
         }
 
         Kirigami.Icon {
@@ -115,18 +130,22 @@ ItemDelegate {
         }
     }
 
-    Dialog {
-        id: infoDialog
+    // Loaded on demand: most cards never set infoText, so avoid paying for
+    // a Dialog instance (window/overlay machinery) on every card.
+    Loader {
+        id: infoDialogLoader
+        active: false
+        sourceComponent: Dialog {
+            anchors.centerIn: Overlay.overlay
+            modal: true
+            title: root.title
+            standardButtons: Dialog.Ok
 
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        title: root.title
-        standardButtons: Dialog.Ok
-
-        Label {
-            width: Math.min(Kirigami.Units.gridUnit * 26, Overlay.overlay ? Overlay.overlay.width - Kirigami.Units.gridUnit * 4 : Kirigami.Units.gridUnit * 26)
-            text: root.infoText
-            wrapMode: Text.WordWrap
+            Label {
+                width: Math.min(Kirigami.Units.gridUnit * 26, Overlay.overlay ? Overlay.overlay.width - Kirigami.Units.gridUnit * 4 : Kirigami.Units.gridUnit * 26)
+                text: root.infoText
+                wrapMode: Text.WordWrap
+            }
         }
     }
 

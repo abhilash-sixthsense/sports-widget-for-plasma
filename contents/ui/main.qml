@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../code/SportsApi.js" as SportsApi
 import "../code/SavedSportsModel.js" as SavedSportsModel
@@ -56,7 +68,6 @@ PlasmoidItem {
     property string favoriteTeam: String(activeLeagueEntry.favoriteTeam || "").trim()
     property string followMode: normalizedFollowMode(activeLeagueEntry)
     property bool followTeamMode: followMode === "team"
-    property string providerLabel: "SportScore"
     property string sourceText: i18nc("@info:status", "No API key required")
     property int panelRotationIndex: 0
     readonly property int panelRotationCount: panelMatchRotationCount()
@@ -80,7 +91,6 @@ PlasmoidItem {
     property string selectedCountryLabel: displayCountryLabel(activeLeagueEntry)
     property string activeDisplayLabel: activeTitleLabel()
     property string activeDisplayCountryLabel: activeSubtitleLabel()
-    property string activeClubBadge: activeHeaderBadge()
     readonly property string nationalTeamVisualStyle: String(Plasmoid.configuration.nationalTeamVisualStyle || "emblems").trim()
     property string primarySport: liveMatchesModel.count > 0 ? liveMatchesModel.get(0).sport : scoresModel.count > 0 ? scoresModel.get(0).sport : SportVisuals.normalizedSport(selectedSport)
     property int pendingRequests: 0
@@ -183,6 +193,22 @@ PlasmoidItem {
             || root.scheduleScopeEntries().length > 0
             || root.recentScopeEntries().length > 0
             || root.tableScopeEntries().length > 0;
+    }
+
+    // Smart mode picks fixed refresh times (30 min schedules, 60s live) to
+    // limit requests; turning it off lets the user pick their own values.
+    function refreshIntervalMs() {
+        const minutes = Plasmoid.configuration.smartRefreshEnabled ? 30 : Plasmoid.configuration.refreshInterval;
+        return Math.max(1, minutes) * 60 * 1000;
+    }
+
+    function liveRefreshIntervalMs() {
+        const seconds = Plasmoid.configuration.smartRefreshEnabled ? 60 : Number(Plasmoid.configuration.liveRefreshInterval || 60);
+        return Math.max(10, seconds) * 1000;
+    }
+
+    function liveRefreshIsEnabled() {
+        return Plasmoid.configuration.smartRefreshEnabled || Plasmoid.configuration.liveRefreshEnabled;
     }
 
     function matchField(match, field) {
@@ -445,12 +471,6 @@ PlasmoidItem {
         return root.followTeamMode ? i18nc("@label", "All competitions") : root.selectedCountryLabel.length > 0 ? root.selectedCountryLabel : i18nc("@label", "Combined scope");
     }
 
-    function activeHeaderBadge() {
-        return root.teamWatchMode() && root.watchedTeamNames().length === 1
-            ? root.preferredTeamBadge(root.effectiveFavoriteTeamName(), root.favoriteTeamBadge())
-            : "";
-    }
-
     function displayLeagueLabel(entry) {
         return SavedSportsModel.displayLeagueLabel(entry);
     }
@@ -507,50 +527,6 @@ PlasmoidItem {
         const flag = String(ProviderCountries.flagSource(country) || "").trim();
         return flag.indexOf("file://") === 0 ? flag : badge;
     }
-
-    function badgeFromMatch(match) {
-        if (!match)
-            return "";
-
-        if (isFavoriteMatch({"team": match.homeTeam || ""}))
-            return String(match.homeBadge || "").trim();
-
-        if (isFavoriteMatch({"team": match.awayTeam || ""}))
-            return String(match.awayBadge || "").trim();
-
-        return "";
-    }
-
-    function favoriteTeamBadge() {
-        const rowSources = [root.primaryTableRows, root.tableRows];
-        for (let sourceIndex = 0; sourceIndex < rowSources.length; sourceIndex += 1) {
-            const rows = Array.isArray(rowSources[sourceIndex]) ? rowSources[sourceIndex] : [];
-            for (let index = 0; index < rows.length; index += 1) {
-                const row = rows[index] || {};
-                if (isFavoriteMatch({"team": row.team || ""}) && String(row.crest || "").trim().length > 0)
-                    return String(row.crest).trim();
-            }
-        }
-
-        const matchSources = [root.latestLiveMatches, root.latestScheduleMatches, root.latestRecentMatches];
-        for (let sourceIndex = 0; sourceIndex < matchSources.length; sourceIndex += 1) {
-            const matches = Array.isArray(matchSources[sourceIndex]) ? matchSources[sourceIndex] : [];
-            for (let index = 0; index < matches.length; index += 1) {
-                const badge = root.badgeFromMatch(matches[index]);
-                if (badge.length > 0)
-                    return badge;
-            }
-        }
-
-        for (let index = 0; index < root.discoveredTeamCompetitions.length; index += 1) {
-            const badge = String(root.discoveredTeamCompetitions[index] && root.discoveredTeamCompetitions[index].teamBadge || "").trim();
-            if (badge.length > 0)
-                return badge;
-        }
-
-        return "";
-    }
-
 
     function normalizedFollowMode(entry) {
         return SavedSportsModel.normalizedFollowMode(entry);
@@ -651,6 +627,11 @@ PlasmoidItem {
     }
 
     function panelLiveText(match) {
+        if (String(match && match.sport || "").toLowerCase() === "tennis") {
+            const setText = String(match && match.minute || "").trim();
+            return setText.length > 0 ? setText : i18nc("@info:live match status", "Live");
+        }
+
         const minute = liveMinuteText(match && (match.minute || match.statusText), match && match.sport);
         return minute.length > 0 ? i18nc("@info:live match status", "Live %1", minute) : i18nc("@info:live match status", "Live");
     }
@@ -973,7 +954,7 @@ PlasmoidItem {
         if (!refreshTimer.running)
             refreshTimer.start();
 
-        if (Plasmoid.configuration.liveRefreshEnabled && !liveRefreshTimer.running)
+        if (root.liveRefreshIsEnabled() && !liveRefreshTimer.running)
             liveRefreshTimer.start();
 
         const token = root.refreshToken + 1;
@@ -1022,14 +1003,14 @@ PlasmoidItem {
             if (!root.isCurrentRefresh(token))
                 return;
 
-            applyLiveMatches(matches);
+            applyLiveMatches(matches, manual);
             root.liveLoading = false;
             finishRefresh(manual, "", token);
         }, (message) => {
             if (!root.isCurrentRefresh(token))
                 return;
 
-            applyLiveMatches([]);
+            applyLiveMatches([], manual);
             root.liveLoading = false;
             finishRefresh(manual, message, token);
         });
@@ -1172,7 +1153,7 @@ PlasmoidItem {
         if (!root.hasSportSelection())
             return;
 
-        if (!Plasmoid.configuration.liveRefreshEnabled && !manual)
+        if (!root.liveRefreshIsEnabled() && !manual)
             return;
 
         if (root.liveRefreshInFlight && !manual)
@@ -1196,7 +1177,7 @@ PlasmoidItem {
                 return;
             }
 
-            applyLiveMatches(matches);
+            applyLiveMatches(matches, manual);
             root.liveLoading = false;
             root.liveRefreshInFlight = false;
             liveRefreshWatchdogTimer.stop();
@@ -1967,11 +1948,11 @@ PlasmoidItem {
         });
     }
 
-    function applyLiveMatches(matches) {
+    function applyLiveMatches(matches, manual) {
         const sourceMatches = Array.isArray(matches) ? matches.slice() : [];
         const scopeSignature = root.liveScopeSignature();
         const sameScope = scopeSignature === root.lastLiveScopeSignature;
-        if (sourceMatches.length === 0 && sameScope && root.latestLiveMatches.length > 0 && root.consecutiveEmptyLiveRefreshes < 2) {
+        if (!manual && sourceMatches.length === 0 && sameScope && root.latestLiveMatches.length > 0 && root.consecutiveEmptyLiveRefreshes < 2) {
             root.consecutiveEmptyLiveRefreshes += 1;
             return liveMatchesModel.count;
         }
@@ -2338,7 +2319,7 @@ PlasmoidItem {
     Timer {
         id: refreshTimer
 
-        interval: Math.max(1, Plasmoid.configuration.refreshInterval) * 60 * 1000
+        interval: root.refreshIntervalMs()
         repeat: true
         running: true
         onTriggered: root.refreshScores(false)
@@ -2347,7 +2328,7 @@ PlasmoidItem {
     Timer {
         id: liveRefreshTimer
 
-        interval: Math.max(10, Number(Plasmoid.configuration.liveRefreshInterval || 30)) * 1000
+        interval: root.liveRefreshIntervalMs()
         repeat: true
         running: false
         onTriggered: root.refreshLiveMatches(false)
@@ -2489,7 +2470,7 @@ PlasmoidItem {
         }
 
         function onLiveRefreshEnabledChanged() {
-            if (Plasmoid.configuration.liveRefreshEnabled && root.hasSportSelection()) {
+            if (root.liveRefreshIsEnabled() && root.hasSportSelection()) {
                 liveRefreshTimer.restart();
                 root.refreshLiveMatches(true);
             } else {
@@ -2500,6 +2481,16 @@ PlasmoidItem {
         function onLiveRefreshIntervalChanged() {
             if (liveRefreshTimer.running)
                 liveRefreshTimer.restart();
+        }
+
+        function onSmartRefreshEnabledChanged() {
+            refreshTimer.restart();
+            if (root.liveRefreshIsEnabled() && root.hasSportSelection()) {
+                liveRefreshTimer.restart();
+                root.refreshLiveMatches(true);
+            } else {
+                liveRefreshTimer.stop();
+            }
         }
 
         function onMatchDateFormatChanged() {
@@ -2584,7 +2575,6 @@ PlasmoidItem {
         errorMessage: root.errorMessage
         tableErrorMessage: root.tableErrorMessage
         lastUpdatedText: root.lastUpdatedText
-        providerLabel: root.providerLabel
         sourceText: root.sourceText
         primaryText: root.primaryMatchText
         secondaryText: root.secondaryMatchText
@@ -2598,7 +2588,6 @@ PlasmoidItem {
         activeSavedLeagueIndex: root.activeSavedLeagueIndex
         activeLeagueLabel: root.activeDisplayLabel
         activeCountryLabel: root.activeDisplayCountryLabel
-        activeClubBadge: root.activeClubBadge
         tableLeagueLabel: root.currentDisplayTableLabel()
         followTeamMode: root.teamWatchMode()
         teamTableOptions: root.teamTableOptions

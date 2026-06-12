@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../../code/SportsApi.js" as SportsApi
 import "../../code/providers/ProviderCatalog.js" as ProviderCatalog
@@ -15,6 +27,10 @@ ColumnLayout {
 
     property var configRoot
     property string combinedFilter: ""
+    // Debounced copy of combinedFilter used by the grids below, so typing
+    // doesn't trigger a full Repeater rebuild (recreating every card) on
+    // each keystroke.
+    property string appliedFilter: ""
 
     // League loading
     property bool loadingLeagues: false
@@ -44,6 +60,7 @@ ColumnLayout {
     readonly property int teamDiscoveryLeagueLimit: 16
     readonly property int teamDiscoveryMaxRowsPerLeague: 40
     readonly property int badgePrefetchLimit: 20
+    readonly property int idleResultLimit: 60
     readonly property int cardMinimumWidth: Kirigami.Units.gridUnit * 10
 
     readonly property bool pageActive: root.configRoot && root.configRoot.pageIndex === root.configRoot.combinedPageIndex
@@ -55,25 +72,28 @@ ColumnLayout {
         const sportsStr = root.configRoot ? String(root.configRoot.cfg_selectedSports || "") : "";
         return sportsStr.split(",")[0].trim().toLowerCase() === "tennis";
     }
+    readonly property bool isInternationalCountry: root.configRoot
+        ? String(root.configRoot.cfg_country || "").trim().toLowerCase() === "world"
+        : false
 
     readonly property var displayedLeagues: {
         if (!root.pageActive || !root.configRoot || root.loadingLeagues)
             return [];
-        return root.configRoot.filtered(root.configRoot.leagueOptions(), root.combinedFilter);
+        return root.configRoot.filtered(root.configRoot.leagueOptions(), root.appliedFilter);
     }
 
     readonly property var displayedTeams: {
-        if (!root.pageActive)
+        if (!root.pageActive || root.isInternationalCountry)
             return [];
         const _rev = root.discoveredTeamRevision;
-        return root.mergedTeamOptions(root.combinedFilter);
+        return root.mergedTeamOptions(root.appliedFilter);
     }
 
     readonly property var displayedNationalTeams: {
         if (!root.pageActive || !root.footballMode)
             return [];
         const opts = root.configRoot
-            ? root.configRoot.filtered(root.nationalTeamOptions, root.combinedFilter)
+            ? root.configRoot.filtered(root.nationalTeamOptions, root.appliedFilter)
             : root.nationalTeamOptions;
         return Array.isArray(opts) ? opts : [];
     }
@@ -87,6 +107,24 @@ ColumnLayout {
         interval: 120
         repeat: false
         onTriggered: root.prefetchVisibleBadges()
+    }
+
+    // Coalesces rapid-fire discovery updates (one per fetched league) into a
+    // single re-render, since each bump forces a full team grid rebuild.
+    Timer {
+        id: discoveredTeamsRevisionTimer
+        interval: 250
+        repeat: false
+        onTriggered: root.discoveredTeamRevision += 1
+    }
+
+    // Delays applying the search filter to the grids, since each change
+    // rebuilds every visible card (Repeater model replacement).
+    Timer {
+        id: filterApplyTimer
+        interval: 300
+        repeat: false
+        onTriggered: root.appliedFilter = root.combinedFilter
     }
 
     Connections {
@@ -359,7 +397,10 @@ ColumnLayout {
             if (hasL !== hasR) return hasL ? -1 : 1;
             return String(left.label || "").localeCompare(String(right.label || ""));
         });
-        return root.configRoot ? root.configRoot.filtered(merged, filterText) : merged;
+        const filteredMerged = root.configRoot ? root.configRoot.filtered(merged, filterText) : merged;
+        if (String(filterText || "").trim().length === 0)
+            return filteredMerged.slice(0, root.idleResultLimit);
+        return filteredMerged;
     }
 
     function isStaticTeamKey(key) {
@@ -387,6 +428,7 @@ ColumnLayout {
         root.staticTeamOptions = [];
         root.staticTeamOptionsReady = false;
         root.discoveredTeams = ({});
+        discoveredTeamsRevisionTimer.stop();
         root.discoveredTeamRevision += 1;
         root.fallbackCountryTeams = [];
         root.featuredFallbackCountryTeams = [];
@@ -447,7 +489,7 @@ ColumnLayout {
             }
             if (crest.length > 0 && String(nextBadges[key] || "").trim() !== crest) { nextBadges[key] = crest; nextAttempted[key] = true; badgesChanged = true; }
         });
-        if (teamsChanged) { root.discoveredTeams = nextTeams; root.discoveredTeamRevision += 1; }
+        if (teamsChanged) { root.discoveredTeams = nextTeams; discoveredTeamsRevisionTimer.restart(); }
         root.teamDiscoveryRank = nextRank;
         if (badgesChanged) { root.badgeByTeam = nextBadges; root.attemptedBadgeTeams = nextAttempted; }
     }
@@ -478,7 +520,7 @@ ColumnLayout {
             if (tPath.length > 0 && String(nextTeams[key].teamPath || "").trim() !== tPath) { nextTeams[key].teamPath = tPath; teamsChanged = true; }
             if (badge.length > 0 && String(nextBadges[key] || "").trim() !== badge) { nextBadges[key] = badge; nextAttempted[key] = true; badgesChanged = true; }
         });
-        if (teamsChanged) { root.discoveredTeams = nextTeams; root.discoveredTeamRevision += 1; }
+        if (teamsChanged) { root.discoveredTeams = nextTeams; discoveredTeamsRevisionTimer.restart(); }
         root.teamDiscoveryRank = nextRank;
         if (badgesChanged) { root.badgeByTeam = nextBadges; root.attemptedBadgeTeams = nextAttempted; }
     }
@@ -589,9 +631,16 @@ ColumnLayout {
         if (!root.configRoot) return;
         const token = root.teamDiscoveryToken + 1;
         root.teamDiscoveryToken = token;
-        root.teamDiscoveryRunning = true;
         root.teamDiscoveryDoneLeagues = 0;
         root.teamDiscoveryTotalLeagues = 0;
+
+        if (root.isInternationalCountry) {
+            root.teamDiscoveryRunning = false;
+            root.finishTeamDiscovery(token);
+            return;
+        }
+
+        root.teamDiscoveryRunning = true;
 
         if (root.playerMode) {
             SportsApi.fetchCountryTeams({
@@ -651,6 +700,10 @@ ColumnLayout {
     function finishTeamDiscovery(token) {
         if (token !== root.teamDiscoveryToken) return;
         root.teamDiscoveryRunning = false;
+        if (discoveredTeamsRevisionTimer.running) {
+            discoveredTeamsRevisionTimer.stop();
+            root.discoveredTeamRevision += 1;
+        }
         root.prefetchVisibleBadges();
     }
 
@@ -786,7 +839,10 @@ ColumnLayout {
             : i18nc("@info:placeholder", "Search competitions and teams")
         text: root.combinedFilter
         leftPadding: Kirigami.Units.gridUnit * 1.8
-        onTextEdited: root.combinedFilter = text
+        onTextEdited: {
+            root.combinedFilter = text;
+            filterApplyTimer.restart();
+        }
 
         Kirigami.Icon {
             anchors.left: parent.left
@@ -886,10 +942,12 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: Kirigami.Units.smallSpacing
                 Layout.bottomMargin: Kirigami.Units.smallSpacing
+                visible: !root.isInternationalCountry
             }
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: !root.isInternationalCountry
 
                 Kirigami.Heading {
                     text: root.playerMode ? i18nc("@title:section", "Players") : i18nc("@title:section", "Teams")
@@ -993,7 +1051,7 @@ ColumnLayout {
 
             Label {
                 Layout.fillWidth: true
-                visible: !root.teamDiscoveryRunning && root.displayedTeams.length === 0
+                visible: !root.isInternationalCountry && !root.teamDiscoveryRunning && root.displayedTeams.length === 0
                 text: root.playerMode
                     ? i18nc("@info", "No tennis players were found by the provider.")
                     : i18nc("@info", "No teams were found for this country yet. Try another country or competition.")

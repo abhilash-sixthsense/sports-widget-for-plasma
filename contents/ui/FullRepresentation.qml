@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../code/SportVisuals.js" as SportVisuals
 import "../code/SportsApi.js" as SportsApi
@@ -26,7 +38,6 @@ Item {
     property string errorMessage: ""
     property string tableErrorMessage: ""
     property string lastUpdatedText: ""
-    property string providerLabel: ""
     property string sourceText: ""
     property string primaryText: ""
     property string secondaryText: ""
@@ -39,7 +50,6 @@ Item {
     property int activeSavedLeagueIndex: -1
     property string activeLeagueLabel: ""
     property string activeCountryLabel: ""
-    property string activeClubBadge: ""
     property string tableLeagueLabel: ""
     property bool followTeamMode: false
     property var teamTableOptions: []
@@ -439,35 +449,13 @@ Item {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                Item {
-                    readonly property int headerIconSize: Kirigami.Units.iconSizes.medium
-
-                    Layout.preferredWidth: headerIconSize
-                    Layout.preferredHeight: headerIconSize
+                Kirigami.Icon {
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.medium
+                    Layout.preferredHeight: Layout.preferredWidth
                     Layout.alignment: Qt.AlignVCenter
-
-                    TeamBadgeImage {
-                        anchors.fill: parent
-                        sourceUrl: root.followTeamMode ? root.activeClubBadge : ""
-                    }
-
-                    Image {
-                        id: sportHeaderImage
-
-                        anchors.fill: parent
-                        source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(root.sport))
-                        visible: (!root.followTeamMode || root.activeClubBadge.length === 0) && status === Image.Ready
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                    }
-
-                    Kirigami.Icon {
-                        anchors.fill: parent
-                        source: "applications-games"
-                        visible: (!root.followTeamMode || root.activeClubBadge.length === 0) && sportHeaderImage.status !== Image.Ready
-                        isMask: true
-                        color: Kirigami.Theme.textColor
-                    }
+                    source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(root.sport))
+                    isMask: true
+                    color: Kirigami.Theme.textColor
                 }
 
                 PlasmaComponents.Label {
@@ -487,20 +475,54 @@ Item {
                     text: i18nc("@action:button", "Switch sport")
                     onClicked: sportMenu.open()
 
+                    ToolTip.text: text
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+
                     Menu {
                         id: sportMenu
+
+                        background: Rectangle {
+                            implicitWidth: 1
+                            implicitHeight: 1
+                            radius: 3
+                            color: Kirigami.Theme.backgroundColor
+                            border.width: 1
+                            border.color: root.withAlpha(Kirigami.Theme.textColor, 0.15)
+                        }
 
                         Repeater {
                             model: Array.isArray(root.availableSports) ? root.availableSports : []
 
                             delegate: MenuItem {
+                                id: sportMenuItem
+
                                 required property var modelData
 
                                 text: SportVisuals.label(modelData)
-                                icon.source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(modelData))
                                 checkable: true
                                 checked: String(modelData) === root.selectedSport
+                                indicator: null
                                 onTriggered: root.sportSelected(String(modelData))
+
+                                contentItem: RowLayout {
+                                    spacing: Kirigami.Units.smallSpacing
+
+                                    Kirigami.Icon {
+                                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                                        Layout.preferredHeight: Layout.preferredWidth
+                                        source: Qt.resolvedUrl("../icons/sports/" + SportVisuals.iconName(sportMenuItem.modelData))
+                                        isMask: true
+                                        color: Kirigami.Theme.textColor
+                                    }
+
+                                    PlasmaComponents.Label {
+                                        Layout.fillWidth: true
+                                        text: sportMenuItem.text
+                                        color: Kirigami.Theme.textColor
+                                        font.bold: sportMenuItem.checked
+                                    }
+                                }
                             }
                         }
                     }
@@ -513,6 +535,10 @@ Item {
                 display: AbstractButton.IconOnly
                 text: i18nc("@action:button", "Refresh")
                 onClicked: root.refreshRequested()
+
+                ToolTip.text: text
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
             }
 
             ToolButton {
@@ -520,6 +546,10 @@ Item {
                 display: AbstractButton.IconOnly
                 text: i18nc("@action:button", "Configure")
                 onClicked: root.configureRequested()
+
+                ToolTip.text: text
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
             }
 
         }
@@ -660,11 +690,19 @@ Item {
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
-            text: (root.lastUpdatedText.length > 0 ? root.lastUpdatedText : i18nc("@info:status", "Waiting for update")) + " · " + i18nc("@label", "Provider: %1", root.providerLabel)
+            text: (root.lastUpdatedText.length > 0 ? root.lastUpdatedText : i18nc("@info:status", "Waiting for update"))
+                + " · " + i18nc("@info", "Powered by <a href=\"https://sportscore.com/\">SportScore</a>")
             color: Kirigami.Theme.textColor
+            linkColor: Kirigami.Theme.linkColor
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
-            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+            textFormat: Text.StyledText
+            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize
+            onLinkActivated: link => Qt.openUrlExternally(link)
+
+            HoverHandler {
+                cursorShape: parent.hoveredLink.length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+            }
         }
 
     }
@@ -741,6 +779,16 @@ Item {
             return /^\d+\+\d*$/.test(SportsApi.normalizedLiveMinute(minute));
         }
 
+        function isTennisMatch() {
+            return String(sport || "").toLowerCase() === "tennis";
+        }
+
+        function liveStatusLabelText() {
+            if (hero.isTennisMatch() && minute.trim().length > 0)
+                return minute.trim();
+            return i18nc("@info:live match status", "Live");
+        }
+
         radius: 0
         color: "transparent"
         clip: false
@@ -773,10 +821,10 @@ Item {
                 Item {
                     id: heroLiveStatusContainer
 
-                    readonly property int dotSize: Math.max(7, Math.round(Kirigami.Units.smallSpacing * 1.5))
+                    readonly property int dotSize: Math.max(9, Math.round(Kirigami.Units.smallSpacing * 2))
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Kirigami.Theme.smallFont.pixelSize + Kirigami.Units.smallSpacing
+                    Layout.preferredHeight: Kirigami.Theme.defaultFont.pixelSize + Kirigami.Units.smallSpacing * 2
                     visible: hero.isLiveMatch()
 
                     Row {
@@ -816,21 +864,21 @@ Item {
 
                         PlasmaComponents.Label {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: i18nc("@info:live match status", "Live")
+                            text: hero.liveStatusLabelText()
                             color: root.liveColor
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             font.bold: true
-                            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize + 2
                         }
 
                         PlasmaComponents.Label {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: !hero.hasStoppageTime() && hero.liveMinuteText().length > 0
+                            visible: !hero.isTennisMatch() && !hero.hasStoppageTime() && hero.liveMinuteText().length > 0
                             text: hero.liveMinuteText()
                             color: root.liveColor
                             font.bold: true
-                            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize + 2
                         }
 
                         HeroMinuteBadge {
@@ -844,7 +892,7 @@ Item {
                             text: "+"
                             color: root.liveColor
                             font.bold: true
-                            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize + 2
                         }
 
                         HeroMinuteBadge {
@@ -862,7 +910,7 @@ Item {
                     elide: Text.ElideRight
                     visible: !hero.isLiveMatch()
                     font.bold: true
-                    font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+                    font.pixelSize: Kirigami.Theme.defaultFont.pixelSize + 2
                 }
 
                 RowLayout {
@@ -963,7 +1011,7 @@ Item {
 
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         width: Math.max(height, minuteLabel.implicitWidth + Kirigami.Units.smallSpacing)
-        height: Kirigami.Theme.smallFont.pixelSize + Kirigami.Units.smallSpacing
+        height: Kirigami.Theme.defaultFont.pixelSize + Kirigami.Units.smallSpacing
         radius: 3
         color: root.withAlpha(root.liveColor, 0.16)
         border.width: 1
@@ -976,7 +1024,7 @@ Item {
             text: parent.text
             color: root.liveColor
             font.bold: true
-            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+            font.pixelSize: Kirigami.Theme.defaultFont.pixelSize + 2
         }
     }
 

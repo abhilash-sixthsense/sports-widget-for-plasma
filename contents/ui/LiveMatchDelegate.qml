@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../code/SportsApi.js" as SportsApi
 import QtQuick
@@ -41,6 +53,17 @@ Item {
     property string detailsError: ""
     property var details: ({})
     property int requestGeneration: 0
+
+    // Persists across detailsLoader recreations (collapse/expand, periodic
+    // detail resets) since `details` itself gets reset to {} while collapsed.
+    property string cachedTrackerUrl: ""
+
+    onDetailsChanged: {
+        const fresh = root.details && root.details.trackerUrl ? String(root.details.trackerUrl) : "";
+        if (fresh.length > 0)
+            root.cachedTrackerUrl = fresh;
+    }
+
     readonly property string detailsIdentity: [
         root.detailsProvider,
         root.matchPath,
@@ -55,6 +78,7 @@ Item {
 
     signal clicked()
     signal doubleClicked()
+    signal requestExpand()
 
     function loadDetails(force) {
         if (!root.expanded)
@@ -117,6 +141,15 @@ Item {
         root.detailsError = "";
     }
 
+    function _openDetailsTab() {
+        if (!root.expanded)
+            root.requestExpand();
+        Qt.callLater(function() {
+            if (detailsLoader.item)
+                detailsLoader.item.activeDetailsTab = 1;
+        });
+    }
+
     width: parent ? parent.width : implicitWidth
     height: contentColumn.implicitHeight
     implicitHeight: contentColumn.implicitHeight
@@ -160,6 +193,7 @@ Item {
             selected: root.selected || root.expanded
             onClicked: root.clicked()
             onDoubleClicked: root.doubleClicked()
+            onScoreInfoClicked: root._openDetailsTab()
         }
 
         Loader {
@@ -173,6 +207,7 @@ Item {
             sourceComponent: LiveMatchDetails {
                 width: detailsLoader.width
                 details: root.details
+                cachedTrackerUrl: root.cachedTrackerUrl
                 loading: root.detailsLoading
                 errorText: root.detailsError
                 homeTeam: root.homeTeam

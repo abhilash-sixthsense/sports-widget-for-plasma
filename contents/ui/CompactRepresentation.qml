@@ -1,7 +1,19 @@
 /*
-    SPDX-FileCopyrightText: 2026 Petar Nedyalkov <petar.nedyalkov91@gmail.com>
-    SPDX-License-Identifier: GPL-3.0-only
-*/
+ * Copyright 2026  Petar Nedyalkov
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import "../code/SportVisuals.js" as SportVisuals
 import QtQuick
@@ -146,14 +158,14 @@ Control {
     readonly property int homeTeamNaturalWidth: compact.showTeamNames() ? Math.ceil(homeTeamMetrics.advanceWidth) : 0
     readonly property int awayTeamNaturalWidth: compact.showTeamNames() ? Math.ceil(awayTeamMetrics.advanceWidth) : 0
     readonly property int scoreNaturalWidth: Math.ceil(scoreMetrics.advanceWidth)
-    readonly property int liveDotNaturalWidth: compact.isLive ? 7 + compact.teamContentSpacing : 0
-    readonly property int liveStatusNaturalWidth: compact.isLive ? Math.ceil(liveTextMetrics.advanceWidth) : 0
+    readonly property int liveDotSize: 5
+    readonly property int liveStatusNaturalWidth: compact.isLive ? Math.ceil(liveTextMetrics.advanceWidth) + compact.liveDotSize + compact.teamContentSpacing : 0
     readonly property int centerNaturalWidth: Math.max(scoreNaturalWidth, liveStatusNaturalWidth)
     readonly property int homeSideNaturalWidth: (compact.showBadges() ? compact.estimatedLogoSize : 0) + (compact.showBadges() && compact.showTeamNames() ? compact.teamContentSpacing : 0) + homeTeamNaturalWidth
     readonly property int awaySideNaturalWidth: (compact.showBadges() ? compact.estimatedLogoSize : 0) + (compact.showBadges() && compact.showTeamNames() ? compact.teamContentSpacing : 0) + awayTeamNaturalWidth
     readonly property int favoriteMatchNaturalWidth: homeSideNaturalWidth + Math.ceil(favoriteSeparatorMetrics.advanceWidth) + awaySideNaturalWidth + compact.matchColumnSpacing * 2 + compact.contentMargin * 2
     readonly property int favoriteDetailsNaturalWidth: Math.ceil(favoriteDetailsMetrics.advanceWidth) + compact.contentMargin * 2
-    readonly property int matchNaturalWidth: compact.favoritePanelMode ? Math.max(favoriteMatchNaturalWidth, favoriteDetailsNaturalWidth) : compact.liveDotNaturalWidth + homeSideNaturalWidth + centerNaturalWidth + awaySideNaturalWidth + compact.matchColumnSpacing * 2 + compact.contentMargin * 2
+    readonly property int matchNaturalWidth: compact.favoritePanelMode ? Math.max(favoriteMatchNaturalWidth, favoriteDetailsNaturalWidth) : homeSideNaturalWidth + centerNaturalWidth + awaySideNaturalWidth + compact.matchColumnSpacing * 2 + compact.contentMargin * 2
     readonly property int fallbackNaturalWidth: Math.ceil(fallbackTextMetrics.advanceWidth) + Kirigami.Units.iconSizes.medium + compact.matchColumnSpacing * 2 + (compact.liveCount > 0 ? Kirigami.Units.iconSizes.smallMedium + compact.matchColumnSpacing : 0)
     readonly property int naturalPanelWidth: compact.hasMatchDetails() ? matchNaturalWidth : fallbackNaturalWidth
     readonly property int minimumPanelWidth: compact.normalizedLayoutMode() === "badgesOnly" ? Kirigami.Units.gridUnit * 5 : Kirigami.Units.gridUnit * 9
@@ -285,11 +297,6 @@ Control {
             spacing: compact.matchColumnSpacing
             visible: compact.hasMatchDetails() && !compact.favoritePanelMode
 
-            LiveDot {
-                Layout.alignment: Qt.AlignVCenter
-                visible: compact.isLive
-            }
-
             RowLayout {
                 Layout.fillWidth: compact.showTeamNames()
                 Layout.minimumWidth: compact.homeSideNaturalWidth
@@ -330,7 +337,11 @@ Control {
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter
                     visible: compact.isLive
-                    spacing: Math.max(2, Math.round(compact.teamContentSpacing / 2))
+                    spacing: compact.teamContentSpacing
+
+                    LiveDot {
+                        Layout.alignment: Qt.AlignVCenter
+                    }
 
                     PanelSecondaryLabel {
                         Layout.alignment: Qt.AlignVCenter
@@ -491,7 +502,7 @@ Control {
     }
 
     component LiveDot: Rectangle {
-        Layout.preferredWidth: 5
+        Layout.preferredWidth: compact.liveDotSize
         Layout.preferredHeight: Layout.preferredWidth
         radius: width / 2
         color: compact.liveColor
