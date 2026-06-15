@@ -68,6 +68,7 @@ Item {
     readonly property bool simpleMode: root.widgetLayoutMode === "simple"
     property bool simpleRebuildPending: false
     property var simpleCollapsedGroups: ({})
+    property var simpleGroups: []
     property int activeTab: 0
     property int selectedLiveIndex: 0
     property int selectedScoreIndex: 0
@@ -244,14 +245,17 @@ Item {
         };
     }
 
-    // Builds a single league-grouped list that merges live and scheduled
+    // Builds a competition-grouped list that merges live and scheduled
     // matches for the "Simple" layout. Live matches are placed before
     // scheduled ones within each competition, and duplicates between the two
-    // source models are collapsed (the live entry wins).
+    // source models are collapsed (the live entry wins). The result is an
+    // array of { group, matches } so each competition is rendered as a single,
+    // reliably-clickable collapsible group.
     function rebuildSimpleModel() {
-        simpleCombinedModel.clear();
-        if (!root.simpleMode)
+        if (!root.simpleMode) {
+            root.simpleGroups = [];
             return;
+        }
 
         const order = [];
         const grouped = {};
@@ -281,9 +285,11 @@ Item {
         collect(root.liveModel, true);
         collect(root.scoreModel, false);
 
-        order.forEach(group => {
-            grouped[group].live.forEach(entry => simpleCombinedModel.append(entry));
-            grouped[group].scheduled.forEach(entry => simpleCombinedModel.append(entry));
+        root.simpleGroups = order.map(group => {
+            return {
+                "group": group,
+                "matches": grouped[group].live.concat(grouped[group].scheduled)
+            };
         });
     }
 
@@ -309,10 +315,6 @@ Item {
             root.simpleRebuildPending = false;
             root.rebuildSimpleModel();
         });
-    }
-
-    ListModel {
-        id: simpleCombinedModel
     }
 
     onLiveModelChanged: {
@@ -793,7 +795,7 @@ Item {
                 anchors.fill: parent
                 clip: true
                 spacing: 0
-                model: simpleCombinedModel
+                model: root.simpleGroups
                 boundsBehavior: Flickable.StopAtBounds
 
                 readonly property int contentColumnWidth: Math.max(0, width - Kirigami.Units.gridUnit)
@@ -802,42 +804,55 @@ Item {
                     policy: ScrollBar.AsNeeded
                 }
 
-                section.property: "leagueGroup"
-                section.criteria: ViewSection.FullString
-                section.delegate: RoundSectionHeader {
-                    width: simpleList.contentColumnWidth
-                    text: section
-                    collapsible: true
-                    collapsed: root.isSimpleGroupCollapsed(section)
-                    onToggled: root.toggleSimpleGroup(section)
-                }
+                delegate: Column {
+                    id: groupDelegate
 
-                delegate: ScoreDelegate {
-                    width: simpleList.contentColumnWidth
-                    visible: !root.isSimpleGroupCollapsed(model.leagueGroup)
-                    height: visible ? implicitHeight : 0
-                    enabled: visible
-                    sport: model.sport
-                    league: model.league
-                    homeTeam: model.homeTeam
-                    awayTeam: model.awayTeam
-                    homeScore: model.homeScore
-                    awayScore: model.awayScore
-                    homePenaltyScore: model.homePenaltyScore
-                    awayPenaltyScore: model.awayPenaltyScore
-                    status: model.status
-                    minute: model.minute
-                    startTime: model.startTime
-                    matchday: model.matchday || ""
-                    stadium: model.stadium || ""
-                    homeBadge: model.homeBadge
-                    awayBadge: model.awayBadge
-                    poster: model.poster
-                    popular: model.popular
-                    showScore: model.showScore !== false
-                    splitLeagueAndTimeLines: true
-                    splitDateAndTimeLines: true
-                    favorite: root.isFavoriteTeam(model.homeTeam) || root.isFavoriteTeam(model.awayTeam)
+                    required property int index
+
+                    readonly property var groupData: root.simpleGroups[index] || ({ "group": "", "matches": [] })
+                    readonly property bool collapsed: root.isSimpleGroupCollapsed(groupData.group)
+
+                    width: simpleList.width
+                    spacing: 0
+
+                    RoundSectionHeader {
+                        width: simpleList.contentColumnWidth
+                        text: groupDelegate.groupData.group
+                        collapsible: true
+                        collapsed: groupDelegate.collapsed
+                        onToggled: root.toggleSimpleGroup(groupDelegate.groupData.group)
+                    }
+
+                    Repeater {
+                        model: groupDelegate.collapsed ? [] : groupDelegate.groupData.matches
+
+                        delegate: ScoreDelegate {
+                            required property var modelData
+
+                            width: simpleList.contentColumnWidth
+                            sport: modelData.sport
+                            league: modelData.league
+                            homeTeam: modelData.homeTeam
+                            awayTeam: modelData.awayTeam
+                            homeScore: modelData.homeScore
+                            awayScore: modelData.awayScore
+                            homePenaltyScore: modelData.homePenaltyScore
+                            awayPenaltyScore: modelData.awayPenaltyScore
+                            status: modelData.status
+                            minute: modelData.minute
+                            startTime: modelData.startTime
+                            matchday: modelData.matchday || ""
+                            stadium: modelData.stadium || ""
+                            homeBadge: modelData.homeBadge
+                            awayBadge: modelData.awayBadge
+                            poster: modelData.poster
+                            popular: modelData.popular
+                            showScore: modelData.showScore !== false
+                            splitLeagueAndTimeLines: true
+                            splitDateAndTimeLines: true
+                            favorite: root.isFavoriteTeam(modelData.homeTeam) || root.isFavoriteTeam(modelData.awayTeam)
+                        }
+                    }
                 }
             }
 
