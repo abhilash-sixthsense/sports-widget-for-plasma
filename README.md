@@ -1,6 +1,9 @@
 # Sports Widget for KDE Plasma 6
 
 > ⚠️ **Beta software:** This widget is still in beta. Features, settings and configuration options may still change before the stable release.
+>  Unfortunately, the SportsScore API provider is proving to be too unstable for the widget at the moment. Quite often, requests either return no data or fail with HTTP 504 timeouts. As a result, the widget may load very slowly or fail to display data altogether. Because of this, I have decided to temporarily unpublish the widget from the KDE Store until I can find a reliable solution. 
+
+----------------------------
 
 Sports widget for KDE Plasma desktop environment. Provides live scores, results, schedules and tables for various sports.
 
